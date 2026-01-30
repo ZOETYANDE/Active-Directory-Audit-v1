@@ -46,8 +46,8 @@ Password: ********
 
 | Fichier | Description |
 |---------|-------------|
-| `bloodhound_collector.sh` | Script principal de collecte |
-| `install_bloodhound_deps.sh` | Installateur des dépendances |
+| `B_collector.sh` | Script principal de collecte |
+| `requirements.sh` | Installateur des dépendances |
 
 ## 🔧 Dépendances
 
