@@ -21,18 +21,18 @@ git clone https://github.com/votre-username/bloodhound-collector.git
 cd bloodhound-collector
 
 # Installer les dépendances
-sudo ./install_bloodhound_deps.sh
+sudo ./B_Collector.sh
 ```
 
 ## 📖 Utilisation
 
 ```bash
-./bloodhound_collector.sh <username> <dc_ip>
+./B_Collector.sh <username> <dc_ip>
 ```
 
 **Exemple :**
 ```bash
-./bloodhound_collector.sh admin 192.168.1.10
+./B_Collector.sh admin 192.168.1.10
 Password: ********
 
 [*] Détection du domaine AD...
