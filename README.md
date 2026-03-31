@@ -26,13 +26,13 @@ Enterprise-grade Active Directory security assessment tool. Automates comprehens
 sudo ./requirements.sh
 
 # 2. Run a full audit
-./activeD_Audit.sh -t [IP_ADDRESS] -d [DOMAIN] -u [USERNAME]
+./activeD_Audit.sh -t [IP_ADDRESS] -d [YOUR DOMAIN] -u [USERNAME]
 
 # 3. Run with config file
 ./activeD_Audit.sh --config audit.conf -u [USERNAME]
 
 # 4. Non-authenticated scan only
-./activeD_Audit.sh -t [IP_ADDRESS] -d [DOMAIN] --unauth-only
+./activeD_Audit.sh -t [IP_ADDRESS] -d [YOUR DOMAIN] --unauth-only
 ```
 
 ## 📖 Usage
@@ -42,7 +42,7 @@ sudo ./requirements.sh
 
 TARGET:
   -t, --target <IP>         DC IP address
-  -d, --domain <DOMAIN>     AD domain (e.g. CORP.LOCAL)
+  -d, --domain <DOMAIN>     AD domain (e.g. [YOUR DOMAIN])
   -n, --network <CIDR>      Network range (auto-detected if omitted)
   --dc-hostname <NAME>      DC hostname for BloodHound
 
