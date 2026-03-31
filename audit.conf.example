@@ -6,8 +6,8 @@
 # ═══════════════════════════════════════════════════════
 DC_IP=[IP_ADDRESS]
 DC_HOSTNAME=                # DC hostname (e.g. DC01) — leave empty for auto-detect
-DOMAIN=[DOMAIN]
-NETWORK=192.168.4.0/24      # Leave empty for auto-detect from DC_IP
+DOMAIN=[YOUR DOMAIN]
+NETWORK=[IP_ADDRESS]      # Leave empty for auto-detect from DC_IP
 
 # ═══════════════════════════════════════════════════════
 # OPTIONS
