@@ -1,4 +1,4 @@
-# 🛡️ AD Audit Framework v4.0
+# 🛡️ AD Audit Framework v1.4.1
 
 Enterprise-grade Active Directory security assessment tool. Automates comprehensive AD auditing — from network discovery to BloodHound collection, ADCS analysis, and delegated permissions review — with professional HTML and text reporting.
 
