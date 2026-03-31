@@ -1,0 +1,17 @@
+# Active Directory Audit Configuration
+# Usage: ./activeD_Audit.sh --config audit.conf -u <username>
+
+# ═══════════════════════════════════════════════════════
+# TARGET
+# ═══════════════════════════════════════════════════════
+DC_IP=[IP_ADDRESS]
+DC_HOSTNAME=                # DC hostname (e.g. DC01) — leave empty for auto-detect
+DOMAIN=[DOMAIN]
+NETWORK=192.168.4.0/24      # Leave empty for auto-detect from DC_IP
+
+# ═══════════════════════════════════════════════════════
+# OPTIONS
+# ═══════════════════════════════════════════════════════
+LDAPS=false                 # Use LDAPS (port 636) instead of LDAP (389)
+INACTIVITY_DAYS=90          # Days before a user is considered inactive
+ENCRYPT_OUTPUT=false        # GPG-encrypt the final archive
