@@ -1,6 +1,6 @@
 #!/bin/bash
 #===============================================================================
-# AD AUDIT FRAMEWORK — DEPENDENCY INSTALLER v4.0
+# AD AUDIT FRAMEWORK — DEPENDENCY INSTALLER v2.0
 #
 # Supports: Debian/Kali/Ubuntu, Arch, Fedora/RHEL
 # Usage: sudo ./requirements.sh [--check-only]
@@ -45,7 +45,7 @@ detect_os() {
 #===============================================================================
 
 install_system_packages() {
-    local packages=("python3" "python3-pip" "ldap-utils" "nmap" "dnsutils" "tar" "gnupg")
+    local packages=("python3" "python3-pip" "ldap-utils" "nmap" "dnsutils" "tar" "gnupg" "smbclient")
 
     case "${OS_ID}" in
         debian|ubuntu|kali|parrot|linuxmint)
@@ -212,7 +212,7 @@ verify_tools() {
 
 echo ""
 echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   AD AUDIT FRAMEWORK — Dependency Installer v4.0            ║${NC}"
+echo -e "${CYAN}║   AD AUDIT FRAMEWORK — Dependency Installer v2.0            ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 

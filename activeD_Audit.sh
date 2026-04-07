@@ -2,7 +2,7 @@
 
 #===============================================================================
 #
-# ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v1.0
+# ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v2.0
 #
 # Enterprise-grade AD security assessment tool
 # Supports: Dynamic config, NetExec, LDAPS, BloodHound, ADCS, GPO, LAPS
@@ -17,7 +17,7 @@ set -u
 #===============================================================================
 # CONFIGURATION DEFAULTS (overridden by CLI args or config file)
 #===============================================================================
-readonly SCRIPT_VERSION="1.0"
+readonly SCRIPT_VERSION="2.0"
 readonly AUDIT_REF="Audit - Sécurité Active Directory"
 
 # Target config — set via CLI or config file
@@ -42,6 +42,8 @@ REPORT_FILE=""
 SUMMARY_FILE=""
 LOG_SUMMARY_FILE=""
 HTML_REPORT=""
+JSON_REPORT=""
+REMEDIATION_FILE=""
 PASSWORD_FILE=""
 
 # Colours
@@ -80,9 +82,24 @@ HAS_CME=false
 HAS_ENUM4LINUX=false
 HAS_BLOODHOUND=false
 HAS_CERTIPY=false
+HAS_SMBCLIENT=false
+HAS_RPCDUMP=false
+HAS_DIG=false
+
+# Module selector
+SELECTED_MODULES=""
+SKIP_MODULES=""
+
+# Progress tracking
+declare -i TOTAL_MODULES=0
+declare -i CURRENT_MODULE=0
 
 # Background PIDs for cleanup
 declare -a BG_PIDS=()
+
+# Remediation commands for PowerShell script
+declare -a REMEDIATION_CMDS=()
+declare -a REMEDIATION_LABELS=()
 
 #===============================================================================
 # LOGGING SYSTEM
@@ -450,6 +467,47 @@ smb_tool_exec() {
     fi
 }
 
+# Progress tracking
+show_progress() {
+    local module_name="$1"
+    ((CURRENT_MODULE++)) || true
+    local pct=$((CURRENT_MODULE * 100 / TOTAL_MODULES))
+    local filled=$((pct / 5))
+    local empty=$((20 - filled))
+    local bar=""
+    local i
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+    local elapsed=$(( $(date +%s) - ${PERF_TIMERS[total_start]:-$(date +%s)} ))
+    printf "\r${CYAN}[${bar}] %3d%% │ %d/%d: %s │ %ds${NC}        " \
+        "$pct" "$CURRENT_MODULE" "$TOTAL_MODULES" "$module_name" "$elapsed" >&2
+    echo "" >&2
+}
+
+# Module selector: check if a module should run
+should_run_module() {
+    local module="$1"
+    # If specific modules requested, only run those
+    if [ -n "${SELECTED_MODULES}" ]; then
+        echo ",${SELECTED_MODULES}," | grep -q ",${module}," && return 0 || return 1
+    fi
+    # If skip list specified, skip those
+    if [ -n "${SKIP_MODULES}" ]; then
+        echo ",${SKIP_MODULES}," | grep -q ",${module}," && return 1 || return 0
+    fi
+    return 0
+}
+
+# Enhanced finding with remediation
+add_finding_remediation() {
+    local severity="$1" title="$2" desc="$3" evidence="${4:-}" remediation="${5:-}"
+    add_finding "${severity}" "${title}" "${desc}" "${evidence}"
+    if [ -n "${remediation}" ]; then
+        REMEDIATION_LABELS+=("${severity}: ${title}")
+        REMEDIATION_CMDS+=("${remediation}")
+    fi
+}
+
 #===============================================================================
 # AUTO-DETECTION FUNCTIONS
 #===============================================================================
@@ -545,7 +603,7 @@ check_requirements() {
     print_section "VÉRIFICATION DES PRÉREQUIS"
 
     local critical_tools=("nmap" "ldapsearch")
-    local optional_tools_list=("nxc:NetExec" "crackmapexec:CrackMapExec" "enum4linux-ng:Enum4Linux-NG" "bloodhound-python:BloodHound" "certipy:Certipy-AD" "gpg:GPG")
+    local optional_tools_list=("nxc:NetExec" "crackmapexec:CrackMapExec" "enum4linux-ng:Enum4Linux-NG" "bloodhound-python:BloodHound" "certipy:Certipy-AD" "gpg:GPG" "smbclient:SMBClient" "rpcdump.py:RPCDump" "dig:DNS-Dig")
 
     print_info "Vérification des outils critiques..."
     for tool in "${critical_tools[@]}"; do
@@ -573,6 +631,9 @@ check_requirements() {
                 enum4linux-ng)      HAS_ENUM4LINUX=true ;;
                 bloodhound-python)  HAS_BLOODHOUND=true ;;
                 certipy)            HAS_CERTIPY=true ;;
+                smbclient)          HAS_SMBCLIENT=true ;;
+                rpcdump.py)         HAS_RPCDUMP=true ;;
+                dig)                HAS_DIG=true ;;
             esac
         else
             print_info "○ ${name}: Non disponible (optionnel)"
@@ -612,11 +673,13 @@ setup_environment() {
     SUMMARY_FILE="${OUTPUT_DIR}/00_RESUME_SECURITE.txt"
     LOG_SUMMARY_FILE="${OUTPUT_DIR}/log_summary.txt"
     HTML_REPORT="${OUTPUT_DIR}/RAPPORT_AUDIT_AD.html"
+    JSON_REPORT="${OUTPUT_DIR}/findings.json"
+    REMEDIATION_FILE="${OUTPUT_DIR}/REMEDIATION.ps1"
     PASSWORD_FILE="${OUTPUT_DIR}/.secure_password"
 
     log "INFO" "Création de la structure de répertoires"
 
-    mkdir -p "${OUTPUT_DIR}"/{01_Inventaire,02_Configuration_DC,03_Comptes_Utilisateurs,04_Groupes_Privileges,05_Politique_Mots_de_Passe,06_GPO,07_Partages,08_Vulnerabilites,09_BloodHound,10_Preuves,11_Ordinateurs,12_Delegation,13_ACL,14_Trusts,15_LAPS,16_Certificats}
+    mkdir -p "${OUTPUT_DIR}"/{01_Inventaire,02_Configuration_DC,03_Comptes_Utilisateurs,04_Groupes_Privileges,05_Politique_Mots_de_Passe,06_GPO,07_Partages,08_Vulnerabilites,09_BloodHound,10_Hardening,11_Ordinateurs,12_Delegation,13_ACL,14_Trusts,15_LAPS,16_Certificats,17_DNS}
     chmod 700 "${OUTPUT_DIR}"
 
     # Derive Base DN
@@ -900,19 +963,38 @@ audit_authenticated() {
         fi
     fi
 
-    # Run all sub-audits
-    audit_users "${username}" "${pwd_file}"
-    audit_groups "${username}" "${pwd_file}"
-    audit_inactive_users "${username}" "${pwd_file}"
-    audit_inactive_computers "${username}" "${pwd_file}"
-    audit_password_policy "${username}" "${pwd_file}"
-    audit_gpo "${username}" "${pwd_file}"
-    audit_delegation "${username}" "${pwd_file}"
-    audit_acl_abuse "${username}" "${pwd_file}"
-    audit_trusts "${username}" "${pwd_file}"
-    audit_laps "${username}" "${pwd_file}"
-    audit_adcs "${username}" "${pwd_file}"
-    audit_bloodhound "${username}" "${pwd_file}"
+    # Run all sub-audits with module selector and progress tracking
+    local -a auth_modules=(
+        "users:audit_users:Comptes Utilisateurs"
+        "groups:audit_groups:Groupes Privilégiés"
+        "inactive:audit_inactive_users:Comptes Inactifs"
+        "computers:audit_inactive_computers:Ordinateurs"
+        "password:audit_password_policy:Politique MDP"
+        "gpo:audit_gpo:Stratégies GPO"
+        "shares:audit_shares:Partages SMB"
+        "delegation:audit_delegation:Délégation Kerberos"
+        "acl:audit_acl_abuse:Permissions ACL"
+        "trusts:audit_trusts:Relations d'approbation"
+        "laps:audit_laps:LAPS"
+        "adcs:audit_adcs:Certificats ADCS"
+        "vulns:audit_vulnerabilities:Vulnérabilités"
+        "misc:audit_misc:Durcissement"
+        "bloodhound:audit_bloodhound:BloodHound"
+    )
+
+    for entry in "${auth_modules[@]}"; do
+        local mod_key="${entry%%:*}"
+        local rest="${entry#*:}"
+        local mod_func="${rest%%:*}"
+        local mod_name="${rest#*:}"
+
+        if should_run_module "${mod_key}"; then
+            show_progress "${mod_name}"
+            ${mod_func} "${username}" "${pwd_file}"
+        else
+            log "INFO" "Module ${mod_key} ignoré (sélection utilisateur)"
+        fi
+    done
 
     stop_timer "authenticated"
 }
@@ -988,6 +1070,79 @@ audit_users() {
     else
         print_warning "Aucun compte désactivé trouvé"
     fi
+    # Passwords in description field [NEW v2.0]
+    print_test "Mots de passe dans les descriptions"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectCategory=person)(objectClass=user)(|(description=*pass*)(description=*pwd*)(description=*mot de passe*)(info=*pass*)(info=*pwd*)))" \
+        "sAMAccountName description info" "${output_dir}/users_pwd_in_desc.txt"
+
+    local pwd_desc_count
+    pwd_desc_count=$(safe_count "sAMAccountName:" "${output_dir}/users_pwd_in_desc.txt")
+
+    if [ "${pwd_desc_count}" -gt 0 ]; then
+        print_error "🔴 ${pwd_desc_count} comptes avec mot de passe potentiel dans la description!"
+        add_finding_remediation "HIGH" "Mots de Passe dans Descriptions" "${pwd_desc_count} comptes ont potentiellement un mot de passe dans le champ description ou info." \
+            "${output_dir}/users_pwd_in_desc.txt" \
+            "# Remove passwords from description fields\nGet-ADUser -Filter * -Properties Description | Where-Object {\$_.Description -match 'pass|pwd'} | Select-Object SamAccountName, Description"
+    else
+        print_success "Aucun mot de passe dans les descriptions"
+    fi
+
+    # Reversible encryption [NEW v2.0]
+    print_test "Chiffrement réversible"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=128))" \
+        "sAMAccountName" "${output_dir}/users_reversible_enc.txt"
+
+    local rev_enc
+    rev_enc=$(safe_count "sAMAccountName:" "${output_dir}/users_reversible_enc.txt")
+
+    if [ "${rev_enc}" -gt 0 ]; then
+        print_error "🔴 ${rev_enc} comptes avec chiffrement réversible!"
+        add_finding_remediation "HIGH" "Chiffrement Réversible" "${rev_enc} comptes stockent le mot de passe en chiffrement réversible (équivalent texte clair)." \
+            "${output_dir}/users_reversible_enc.txt" \
+            "# Disable reversible encryption\nGet-ADUser -Filter {UserAccountControl -band 128} | Set-ADAccountControl -AllowReversiblePasswordEncryption \$false"
+    else
+        print_success "Aucun chiffrement réversible"
+    fi
+
+    # DES-only Kerberos [NEW v2.0]
+    print_test "Kerberos DES uniquement"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=2097152))" \
+        "sAMAccountName" "${output_dir}/users_des_only.txt"
+
+    local des_only
+    des_only=$(safe_count "sAMAccountName:" "${output_dir}/users_des_only.txt")
+
+    if [ "${des_only}" -gt 0 ]; then
+        print_warning "⚠️  ${des_only} comptes avec Kerberos DES uniquement"
+        add_finding "HIGH" "Kerberos DES Uniquement" "${des_only} comptes utilisent le chiffrement DES, considéré comme cassé." \
+            "${output_dir}/users_des_only.txt"
+    else
+        print_success "Aucun compte DES-only"
+    fi
+
+    # Recently created accounts (30 days) [NEW v2.0]
+    print_test "Comptes créés récemment (30 jours)"
+    local thirty_days_ago
+    thirty_days_ago=$(date -d "30 days ago" "+%Y%m%d000000.0Z" 2>/dev/null || date -v-30d "+%Y%m%d000000.0Z" 2>/dev/null || echo "")
+
+    if [ -n "${thirty_days_ago}" ]; then
+        ldap_search "${username}" "${pwd_file}" \
+            "(&(objectCategory=person)(objectClass=user)(whenCreated>=${thirty_days_ago}))" \
+            "sAMAccountName whenCreated" "${output_dir}/users_recent.txt"
+
+        local recent_count
+        recent_count=$(safe_count "sAMAccountName:" "${output_dir}/users_recent.txt")
+        print_info "📊 ${recent_count} comptes créés ces 30 derniers jours"
+
+        if [ "${recent_count}" -gt 0 ]; then
+            print_success "${recent_count} comptes récents (vérification manuelle recommandée)"
+        fi
+    else
+        print_info "Calcul de date non supporté — vérification ignorée"
+    fi
 
     stop_timer "users"
 }
@@ -1037,6 +1192,45 @@ audit_groups() {
         add_finding "HIGH" "Kerberoasting" "${spn_count} comptes utilisateurs avec SPN — vulnérables au Kerberoasting." "${output_dir}/users_spn.txt"
     else
         print_success "Aucun compte avec SPN"
+    fi
+    # Pre-Windows 2000 Compatible Access [NEW v2.0]
+    print_test "Groupe Pre-Windows 2000 Compatible Access"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectClass=group)(cn=Pre-Windows 2000 Compatible Access))" \
+        "member" "${output_dir}/pre_win2000.txt"
+
+    local pre2k_members
+    pre2k_members=$(grep -cE "^member:|^member::" "${output_dir}/pre_win2000.txt" 2>/dev/null || true)
+    if ! [[ "${pre2k_members}" =~ ^[0-9]+$ ]]; then pre2k_members=0; fi
+
+    if grep -qi "S-1-1-0\|Everyone\|Tout le monde\|S-1-5-11\|Authenticated Users" "${output_dir}/pre_win2000.txt" 2>/dev/null; then
+        print_error "🔴 Pre-Windows 2000 contient Everyone ou Authenticated Users!"
+        add_finding_remediation "HIGH" "Pre-Windows 2000 Ouvert" "Le groupe Pre-Windows 2000 Compatible Access contient Everyone/Authenticated Users. Accès lecture étendu à tout AD." \
+            "${output_dir}/pre_win2000.txt" \
+            "# Remove Authenticated Users from Pre-Windows 2000 Compatible Access\nRemove-ADGroupMember -Identity 'Pre-Windows 2000 Compatible Access' -Members 'S-1-5-11' -Confirm:\$false"
+    elif [ "${pre2k_members}" -gt 0 ]; then
+        print_warning "⚠️  ${pre2k_members} membres dans Pre-Windows 2000"
+    else
+        print_success "Pre-Windows 2000 vide ou restreint"
+    fi
+
+    # Protected Users group [NEW v2.0]
+    print_test "Groupe Protected Users"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectClass=group)(cn=Protected Users))" \
+        "member" "${output_dir}/protected_users.txt"
+
+    local protected_count
+    protected_count=$(grep -cE "^member:|^member::" "${output_dir}/protected_users.txt" 2>/dev/null || true)
+    if ! [[ "${protected_count}" =~ ^[0-9]+$ ]]; then protected_count=0; fi
+
+    if [ "${protected_count}" -eq 0 ]; then
+        print_warning "⚠️  Aucun membre dans Protected Users"
+        add_finding_remediation "MEDIUM" "Protected Users Vide" "Le groupe Protected Users est vide. Les comptes privilégiés ne bénéficient pas des protections avancées (pas de NTLM, pas de délégation, tickets courts)." \
+            "" \
+            "# Add privileged accounts to Protected Users\nAdd-ADGroupMember -Identity 'Protected Users' -Members (Get-ADGroupMember 'Domain Admins')"
+    else
+        print_success "${protected_count} membres dans Protected Users"
     fi
 
     stop_timer "groups"
@@ -1527,6 +1721,394 @@ audit_adcs() {
 }
 
 #===============================================================================
+# AUDIT: SHARES (fills 07_Partages/)  [NEW v2.0]
+#===============================================================================
+
+audit_shares() {
+    local username="$1"
+    local pwd_file="$2"
+    local output_dir="${OUTPUT_DIR}/07_Partages"
+
+    print_section "AUDIT: PARTAGES SMB"
+    start_timer "shares"
+
+    local password
+    password=$(<"${pwd_file}")
+
+    # Share enumeration
+    print_test "Énumération des partages"
+    if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
+        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" --shares" \
+            > "${output_dir}/shares.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/shares.txt" 2>/dev/null || true
+
+        local share_count
+        share_count=$(grep -cE "READ|WRITE" "${output_dir}/shares.txt" 2>/dev/null || true)
+        if ! [[ "${share_count}" =~ ^[0-9]+$ ]]; then share_count=0; fi
+
+        if [ "${share_count}" -gt 0 ]; then
+            print_success "${share_count} partages accessibles"
+        else
+            print_warning "Aucun partage accessible"
+        fi
+
+        # Writable shares
+        print_test "Partages en écriture"
+        local writable
+        writable=$(grep -c "WRITE" "${output_dir}/shares.txt" 2>/dev/null || true)
+        if ! [[ "${writable}" =~ ^[0-9]+$ ]]; then writable=0; fi
+
+        if [ "${writable}" -gt 0 ]; then
+            print_warning "⚠️  ${writable} partages en écriture"
+            add_finding_remediation "MEDIUM" "Partages en Écriture" "${writable} partages SMB accessibles en écriture par l'utilisateur d'audit." \
+                "${output_dir}/shares.txt" \
+                "# Review share permissions\nGet-SmbShare | Get-SmbShareAccess | Where-Object {\$_.AccessRight -eq 'Change' -or \$_.AccessRight -eq 'Full'}"
+        else
+            print_success "Aucun partage en écriture"
+        fi
+    else
+        print_warning "Pas d'outil SMB pour l'énumération des partages"
+    fi
+
+    # SYSVOL content scan
+    print_test "Analyse du contenu SYSVOL"
+    if [ "${HAS_SMBCLIENT}" = true ]; then
+        smbclient "\\\\${DC_IP}\\SYSVOL" -U "${DOMAIN}/${username}%${password}" \
+            -c "recurse ON; ls" > "${output_dir}/sysvol_contents.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/sysvol_contents.txt" 2>/dev/null || true
+
+        # Search for script files with potential credentials
+        if grep -qiE "\.bat|\.cmd|\.vbs|\.ps1|\.xml|\.ini" "${output_dir}/sysvol_contents.txt" 2>/dev/null; then
+            local script_count
+            script_count=$(grep -ciE "\.bat|\.cmd|\.vbs|\.ps1|\.xml|\.ini" "${output_dir}/sysvol_contents.txt" || true)
+            print_warning "⚠️  ${script_count} scripts trouvés dans SYSVOL (vérification manuelle recommandée)"
+            add_finding "LOW" "Scripts dans SYSVOL" "${script_count} fichiers script dans SYSVOL. Vérifier manuellement pour mots de passe hardcodés." \
+                "${output_dir}/sysvol_contents.txt"
+        else
+            print_success "Pas de scripts suspects dans SYSVOL"
+        fi
+    else
+        print_info "smbclient non disponible — analyse SYSVOL ignorée"
+    fi
+
+    stop_timer "shares"
+}
+
+#===============================================================================
+# AUDIT: SMB UNAUTHENTICATED  [NEW v2.0]
+#===============================================================================
+
+audit_smb_unauth() {
+    local output_dir="${OUTPUT_DIR}/08_Vulnerabilites"
+
+    print_section "AUDIT: ÉNUMÉRATION SMB NON AUTHENTIFIÉE"
+    start_timer "smb_unauth"
+
+    # Enum4linux-ng (FINALLY ACTIVATED!)
+    if [ "${HAS_ENUM4LINUX}" = true ]; then
+        print_test "Énumération anonyme (enum4linux-ng)"
+        enum4linux-ng -A "${DC_IP}" -oJ "${output_dir}/enum4linux" > /dev/null 2>&1 || true
+
+        if [ -f "${output_dir}/enum4linux.json" ]; then
+            print_success "Énumération enum4linux-ng complétée"
+
+            # Check for null session success
+            if grep -qi "\"null_session\": true" "${output_dir}/enum4linux.json" 2>/dev/null; then
+                print_error "🔴 Session nulle SMB autorisée!"
+                add_finding_remediation "CRITICAL" "Session Nulle SMB" "Le serveur autorise les sessions nulles SMB. Énumération anonyme possible." \
+                    "${output_dir}/enum4linux.json" \
+                    "# Disable null sessions\nSet-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters' -Name 'RestrictNullSessAccess' -Value 1"
+            else
+                print_success "Sessions nulles restreintes"
+            fi
+
+            # Check for users enumerated anonymously
+            if grep -qi "\"users\":" "${output_dir}/enum4linux.json" 2>/dev/null; then
+                local anon_users
+                anon_users=$(grep -c "\"username\":" "${output_dir}/enum4linux.json" 2>/dev/null || true)
+                if [ "${anon_users:-0}" -gt 0 ]; then
+                    print_warning "⚠️  ${anon_users} utilisateurs énumérés anonymement"
+                    add_finding "HIGH" "Énumération Anonyme d'Utilisateurs" "${anon_users} comptes utilisateurs exposés via énumération RID anonyme." \
+                        "${output_dir}/enum4linux.json"
+                fi
+            fi
+        else
+            print_warning "enum4linux-ng n'a pas produit de résultats"
+        fi
+    else
+        print_info "enum4linux-ng non disponible — énumération anonyme ignorée"
+    fi
+
+    # Null session share test
+    if [ "${HAS_SMBCLIENT}" = true ]; then
+        print_test "Partages en session nulle"
+        smbclient -N -L "\\\\${DC_IP}" > "${output_dir}/null_shares.txt" 2>&1 || true
+
+        if grep -qiE "Disk|IPC|Print" "${output_dir}/null_shares.txt" 2>/dev/null; then
+            local null_shares
+            null_shares=$(grep -ciE "Disk|IPC" "${output_dir}/null_shares.txt" || true)
+            print_warning "⚠️  ${null_shares} partages accessibles en session nulle"
+            add_finding "HIGH" "Partages Session Nulle" "${null_shares} partages accessibles sans authentification." \
+                "${output_dir}/null_shares.txt"
+        else
+            print_success "Aucun partage en session nulle"
+        fi
+    fi
+
+    stop_timer "smb_unauth"
+}
+
+#===============================================================================
+# AUDIT: DNS SECURITY  [NEW v2.0]
+#===============================================================================
+
+audit_dns() {
+    local output_dir="${OUTPUT_DIR}/17_DNS"
+
+    print_section "AUDIT: SÉCURITÉ DNS"
+    start_timer "dns"
+
+    local domain_lower
+    domain_lower=$(echo "${DOMAIN}" | tr '[:upper:]' '[:lower:]')
+
+    # DNS Zone Transfer
+    print_test "Transfert de zone DNS"
+    if [ "${HAS_DIG}" = true ]; then
+        dig axfr "${domain_lower}" "@${DC_IP}" > "${output_dir}/zone_transfer.txt" 2>&1 || true
+
+        if grep -q "XFR size" "${output_dir}/zone_transfer.txt" 2>/dev/null; then
+            local record_count
+            record_count=$(grep -c "IN" "${output_dir}/zone_transfer.txt" 2>/dev/null || true)
+            print_error "🔴 Transfert de zone autorisé! (${record_count} enregistrements)"
+            add_finding_remediation "HIGH" "Transfert de Zone DNS" "Le transfert de zone DNS est autorisé. ${record_count} enregistrements DNS internes exposés." \
+                "${output_dir}/zone_transfer.txt" \
+                "# Restrict zone transfers to specific servers only\n# In DNS Manager: Zone Properties > Zone Transfers > Allow only to listed servers"
+        else
+            print_success "Transfert de zone DNS restreint"
+        fi
+
+        # DNS record enumeration
+        print_test "Énumération DNS basique"
+        dig any "${domain_lower}" "@${DC_IP}" > "${output_dir}/dns_any.txt" 2>&1 || true
+        dig srv "_ldap._tcp.${domain_lower}" "@${DC_IP}" > "${output_dir}/dns_srv_ldap.txt" 2>&1 || true
+        dig srv "_kerberos._tcp.${domain_lower}" "@${DC_IP}" > "${output_dir}/dns_srv_krb.txt" 2>&1 || true
+
+        local srv_count
+        srv_count=$(grep -c "SRV" "${output_dir}/dns_srv_ldap.txt" 2>/dev/null || true)
+        print_success "DNS énuméré (${srv_count} enregistrements SRV)"
+
+        # Wildcard DNS check
+        print_test "Enregistrements DNS wildcard"
+        local wild_result
+        wild_result=$(dig "random-nonexistent-$(date +%s).${domain_lower}" "@${DC_IP}" +short 2>/dev/null || true)
+        if [ -n "${wild_result}" ]; then
+            print_warning "⚠️  Wildcard DNS détecté: ${wild_result}"
+            add_finding "LOW" "DNS Wildcard" "Un enregistrement DNS wildcard résout vers ${wild_result}. Peut masquer des sous-domaines inexistants." ""
+        else
+            print_success "Pas de wildcard DNS"
+        fi
+    else
+        print_warning "dig non disponible — tests DNS ignorés"
+    fi
+
+    stop_timer "dns"
+}
+
+#===============================================================================
+# AUDIT: VULNERABILITY CHECKS  [NEW v2.0]
+#===============================================================================
+
+audit_vulnerabilities() {
+    local username="$1"
+    local pwd_file="$2"
+    local output_dir="${OUTPUT_DIR}/08_Vulnerabilites"
+
+    print_section "AUDIT: VULNÉRABILITÉS CONNUES"
+    start_timer "vulns"
+
+    local password
+    password=$(<"${pwd_file}")
+
+    # Print Spooler (PrintNightmare)
+    if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
+        print_test "Print Spooler / PrintNightmare (CVE-2021-34527)"
+        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" -M spooler" \
+            > "${output_dir}/spooler.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/spooler.txt" 2>/dev/null || true
+
+        if grep -qi "Spooler service is running" "${output_dir}/spooler.txt" 2>/dev/null; then
+            print_error "🔴 Print Spooler actif sur le DC!"
+            add_finding_remediation "CRITICAL" "Print Spooler Actif (PrintNightmare)" "Le service Print Spooler est actif sur ${DC_IP}. Vulnérable à CVE-2021-34527." \
+                "${output_dir}/spooler.txt" \
+                "# Disable Print Spooler on Domain Controllers\nStop-Service -Name Spooler -Force\nSet-Service -Name Spooler -StartupType Disabled"
+        else
+            print_success "Print Spooler non actif ou non détecté"
+        fi
+
+        # PetitPotam
+        print_test "PetitPotam (NTLM Coercion via EFS)"
+        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" -M petitpotam" \
+            > "${output_dir}/petitpotam.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/petitpotam.txt" 2>/dev/null || true
+
+        if grep -qiE "vulnerable|Vulnerable" "${output_dir}/petitpotam.txt" 2>/dev/null; then
+            print_error "🔴 Vulnérable à PetitPotam!"
+            add_finding_remediation "HIGH" "PetitPotam (NTLM Coercion)" "Le DC est vulnérable à PetitPotam. Un attaquant peut forcer l'authentification NTLM." \
+                "${output_dir}/petitpotam.txt" \
+                "# Mitigate PetitPotam — Enable EPA and disable NTLM where possible\n# Apply KB5005413 and restrict NTLM authentication"
+        else
+            print_success "PetitPotam non vulnérable ou non détecté"
+        fi
+
+        # ZeroLogon (safe check)
+        print_test "ZeroLogon (CVE-2020-1472)"
+        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" -M zerologon" \
+            > "${output_dir}/zerologon.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/zerologon.txt" 2>/dev/null || true
+
+        if grep -qiE "VULNERABLE|vuln" "${output_dir}/zerologon.txt" 2>/dev/null; then
+            print_error "🔴 VULNÉRABLE À ZEROLOGON!"
+            add_finding_remediation "CRITICAL" "ZeroLogon (CVE-2020-1472)" "Le DC est vulnérable à ZeroLogon. Compromission du domaine possible sans authentification!" \
+                "${output_dir}/zerologon.txt" \
+                "# Apply ZeroLogon patches immediately!\n# Ensure FullSecureChannelProtection is enforced\nSet-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon\\Parameters' -Name 'FullSecureChannelProtection' -Value 1"
+        else
+            print_success "ZeroLogon non vulnérable"
+        fi
+
+        # noPac (sAMAccountName spoofing)
+        print_test "noPac / sAMAccountName spoofing (CVE-2021-42278)"
+        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" -M nopac" \
+            > "${output_dir}/nopac.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/nopac.txt" 2>/dev/null || true
+
+        if grep -qiE "VULNERABLE|vuln" "${output_dir}/nopac.txt" 2>/dev/null; then
+            print_error "🔴 Vulnérable à noPac!"
+            add_finding_remediation "HIGH" "noPac (CVE-2021-42278/42287)" "Vulnérable à l'usurpation sAMAccountName. Escalade vers Domain Admin possible." \
+                "${output_dir}/nopac.txt" \
+                "# Apply patches KB5008380 and KB5008602"
+        else
+            print_success "noPac non vulnérable"
+        fi
+    else
+        print_info "Pas d'outil SMB — vérifications de vulnérabilités limitées"
+    fi
+
+    # EternalBlue (MS17-010) via nmap
+    print_test "EternalBlue (MS17-010)"
+    nmap -T4 -Pn -p 445 --script smb-vuln-ms17-010 "${DC_IP}" \
+        -oN "${output_dir}/eternalblue.txt" 2>/dev/null || true
+
+    if grep -qi "VULNERABLE" "${output_dir}/eternalblue.txt" 2>/dev/null; then
+        print_error "🔴 VULNÉRABLE À ETERNALBLUE!"
+        add_finding_remediation "CRITICAL" "EternalBlue (MS17-010)" "Le DC est vulnérable à EternalBlue. Exécution de code à distance sans authentification!" \
+            "${output_dir}/eternalblue.txt" \
+            "# Apply MS17-010 patches IMMEDIATELY\n# Disable SMBv1: Set-SmbServerConfiguration -EnableSMB1Protocol \$false"
+    else
+        print_success "EternalBlue non vulnérable"
+    fi
+
+    stop_timer "vulns"
+}
+
+#===============================================================================
+# AUDIT: MISCELLANEOUS HARDENING  [NEW v2.0]
+#===============================================================================
+
+audit_misc() {
+    local username="$1"
+    local pwd_file="$2"
+    local output_dir="${OUTPUT_DIR}/10_Hardening"
+
+    print_section "AUDIT: DURCISSEMENT GÉNÉRAL"
+    start_timer "misc"
+
+    local uri
+    uri=$(get_ldap_uri)
+
+    # MachineAccountQuota
+    print_test "MachineAccountQuota"
+    local maq
+    maq=$(ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
+        -b "${BASE_DN}" -s base "(objectClass=domain)" ms-DS-MachineAccountQuota 2>/dev/null | \
+        grep "ms-DS-MachineAccountQuota:" | awk '{print $2}')
+
+    if [ -n "${maq}" ] && [ "${maq}" -gt 0 ] 2>/dev/null; then
+        print_warning "⚠️  MachineAccountQuota = ${maq}"
+        add_finding_remediation "MEDIUM" "MachineAccountQuota Élevé" "Valeur: ${maq}. Tout utilisateur authentifié peut joindre ${maq} machines au domaine. Risque RBCD." \
+            "" \
+            "# Set MachineAccountQuota to 0\nSet-ADDomain -Identity '${DOMAIN}' -Replace @{'ms-DS-MachineAccountQuota'=0}"
+    elif [ "${maq:-0}" -eq 0 ] 2>/dev/null; then
+        print_success "MachineAccountQuota = 0"
+    else
+        print_warning "Impossible de lire MachineAccountQuota"
+    fi
+
+    # Domain Functional Level
+    print_test "Niveau fonctionnel du domaine"
+    local func_level
+    func_level=$(ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
+        -b "${BASE_DN}" -s base "(objectClass=domain)" msDS-Behavior-Version 2>/dev/null | \
+        grep "msDS-Behavior-Version:" | awk '{print $2}')
+
+    local level_name="Inconnu"
+    case "${func_level}" in
+        0) level_name="Windows 2000" ;;
+        1) level_name="Windows 2003 Interim" ;;
+        2) level_name="Windows 2003" ;;
+        3) level_name="Windows 2008" ;;
+        4) level_name="Windows 2008 R2" ;;
+        5) level_name="Windows 2012" ;;
+        6) level_name="Windows 2012 R2" ;;
+        7) level_name="Windows 2016" ;;
+    esac
+
+    if [ -n "${func_level}" ] && [ "${func_level}" -lt 7 ] 2>/dev/null; then
+        print_warning "⚠️  Niveau fonctionnel: ${level_name} (${func_level})"
+        add_finding "MEDIUM" "Niveau Fonctionnel Ancien" "Niveau fonctionnel du domaine: ${level_name}. Recommandation: Windows 2016 (7) minimum." ""
+    elif [ "${func_level:-0}" -ge 7 ] 2>/dev/null; then
+        print_success "Niveau fonctionnel: ${level_name} (${func_level})"
+    else
+        print_info "Niveau fonctionnel non déterminé"
+    fi
+
+    # AD Recycle Bin
+    print_test "Corbeille AD (Recycle Bin)"
+    local recycle_bin
+    recycle_bin=$(ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
+        -b "CN=Recycle Bin Feature,CN=Optional Features,CN=Directory Service,CN=Windows NT,CN=Services,CN=Configuration,${BASE_DN}" \
+        "(objectClass=*)" msDS-EnabledFeatureBL 2>/dev/null | \
+        grep "msDS-EnabledFeatureBL:" || true)
+
+    if [ -n "${recycle_bin}" ]; then
+        print_success "Corbeille AD activée"
+    else
+        print_warning "⚠️  Corbeille AD non activée"
+        add_finding_remediation "LOW" "Corbeille AD Désactivée" "La corbeille AD n'est pas activée. La récupération d'objets supprimés est limitée." \
+            "" \
+            "# Enable AD Recycle Bin\nEnable-ADOptionalFeature -Identity 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target '${DOMAIN}'"
+    fi
+
+    # AdminCount orphans
+    print_test "Orphelins AdminCount"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectCategory=person)(adminCount=1)(!(memberOf=CN=Domain Admins,CN=Users,${BASE_DN})))" \
+        "sAMAccountName distinguishedName" "${output_dir}/admincount_orphans.txt"
+
+    local orphan_count
+    orphan_count=$(safe_count "sAMAccountName:" "${output_dir}/admincount_orphans.txt")
+
+    if [ "${orphan_count}" -gt 5 ]; then
+        print_warning "⚠️  ${orphan_count} comptes avec adminCount=1 orphelin"
+        add_finding "LOW" "AdminCount Orphelins" "${orphan_count} comptes ont adminCount=1 mais ne sont plus dans les groupes privilégiés (SDProp stale)." \
+            "${output_dir}/admincount_orphans.txt"
+    else
+        print_success "${orphan_count} orphelins AdminCount (acceptable)"
+    fi
+
+    stop_timer "misc"
+}
+
+#===============================================================================
 # AUDIT 5: BLOODHOUND — FQDN AUTO-RESOLUTION
 #===============================================================================
 
@@ -1851,6 +2433,103 @@ EOF
     print_success "Rapport HTML: ${HTML_REPORT}"
     log "INFO" "HTML report generated: ${HTML_REPORT}"
 }
+#===============================================================================
+# JSON FINDINGS EXPORT  [NEW v2.0]
+#===============================================================================
+
+generate_json_report() {
+    print_section "GÉNÉRATION DU RAPPORT JSON"
+
+    {
+        echo "{"
+        echo "  \"audit_metadata\": {"
+        echo "    \"version\": \"${SCRIPT_VERSION}\","
+        echo "    \"domain\": \"${DOMAIN}\","
+        echo "    \"dc_ip\": \"${DC_IP}\","
+        echo "    \"timestamp\": \"$(date -Iseconds)\","
+        echo "    \"total_tests\": ${TESTS_TOTAL},"
+        echo "    \"passed\": ${TESTS_PASSED},"
+        echo "    \"warnings\": ${TESTS_WARNING},"
+        echo "    \"failures\": ${TESTS_FAILED}"
+        echo "  },"
+        echo "  \"findings\": ["
+
+        local i
+        local total=${#FINDINGS_SEVERITY[@]}
+        for ((i=0; i<total; i++)); do
+            local sev="${FINDINGS_SEVERITY[$i]}"
+            # Escape double quotes in title and desc
+            local title="${FINDINGS_TITLE[$i]//\"/\\\"}"
+            local desc="${FINDINGS_DESC[$i]//\"/\\\"}"
+            local evidence="${FINDINGS_EVIDENCE[$i]//\"/\\\"}"
+            local comma=","
+            [ $((i+1)) -eq ${total} ] && comma=""
+
+            echo "    {"
+            echo "      \"id\": \"FIND-$(printf '%03d' $((i+1)))\","
+            echo "      \"severity\": \"${sev}\","
+            echo "      \"title\": \"${title}\","
+            echo "      \"description\": \"${desc}\","
+            echo "      \"evidence_file\": \"${evidence}\""
+            echo "    }${comma}"
+        done
+
+        echo "  ]"
+        echo "}"
+    } > "${JSON_REPORT}"
+
+    print_success "Rapport JSON: ${JSON_REPORT}"
+    log "INFO" "JSON report generated: ${JSON_REPORT}"
+}
+
+#===============================================================================
+# POWERSHELL REMEDIATION SCRIPT  [NEW v2.0]
+#===============================================================================
+
+generate_remediation_script() {
+    print_section "GÉNÉRATION DU SCRIPT DE REMÉDIATION"
+
+    {
+        echo "# ============================================================================"
+        echo "# SCRIPT DE REMÉDIATION ACTIVE DIRECTORY"
+        echo "# Généré automatiquement par AD Audit Framework v${SCRIPT_VERSION}"
+        echo "# Date: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "# Domaine: ${DOMAIN} | DC: ${DC_IP}"
+        echo "# ============================================================================"
+        echo "#"
+        echo "# IMPORTANT: Revoyez chaque commande avant exécution!"
+        echo "# Testez d'abord dans un environnement de test."
+        echo "# ============================================================================"
+        echo ""
+        echo "# Requires: ActiveDirectory PowerShell module"
+        echo "# Import-Module ActiveDirectory"
+        echo ""
+
+        if [ ${#REMEDIATION_CMDS[@]} -gt 0 ]; then
+            local i
+            for ((i=0; i<${#REMEDIATION_CMDS[@]}; i++)); do
+                echo "# ---------------------------------------------------------------"
+                echo "# ${REMEDIATION_LABELS[$i]}"
+                echo "# ---------------------------------------------------------------"
+                # Output each line of the remediation command
+                echo "${REMEDIATION_CMDS[$i]}" | while IFS= read -r line; do
+                    echo "${line}"
+                done
+                echo ""
+            done
+        else
+            echo "# Aucune remédiation automatique générée."
+            echo "# Consultez le rapport HTML pour les recommandations manuelles."
+        fi
+
+        echo "# ============================================================================"
+        echo "# FIN DU SCRIPT DE REMÉDIATION"
+        echo "# ============================================================================"
+    } > "${REMEDIATION_FILE}"
+
+    print_success "Script remédiation: ${REMEDIATION_FILE}"
+    log "INFO" "Remediation script generated: ${REMEDIATION_FILE}"
+}
 
 #===============================================================================
 # TEXT SUMMARY & REPORT GENERATION
@@ -2042,6 +2721,11 @@ AUTHENTICATION:
   -u, --user <username>     AD username
   --unauth-only             Non-authenticated tests only
 
+MODULES:
+  --modules <list>          Comma-separated modules to run (e.g. users,groups,bloodhound)
+  --skip <list>             Comma-separated modules to skip (e.g. bloodhound,adcs)
+  --list-modules            Show available modules
+
 OPTIONS:
   --config <file>           Load config from file
   --output-dir <path>       Custom output directory
@@ -2060,6 +2744,8 @@ EXAMPLES:
   $0 --config audit.conf -u auditor
   $0 -t [IP_ADDRESS] -d [DOMAIN] --unauth-only
   $0 -t [IP_ADDRESS] --debug -u admin    # auto-detect domain
+  $0 -t 10.0.0.1 -d CORP.LOCAL -u admin --modules users,groups,bloodhound
+  $0 -t 10.0.0.1 -d CORP.LOCAL -u admin --skip bloodhound,adcs
 EOF
 }
 
@@ -2114,6 +2800,20 @@ main() {
             --verbose)
                 VERBOSE_MODE=true; shift
                 ;;
+            --modules)
+                SELECTED_MODULES="$2"; shift 2
+                ;;
+            --skip)
+                SKIP_MODULES="$2"; shift 2
+                ;;
+            --list-modules)
+                echo "Available modules:"
+                echo "  inventory, dc_config, ldap_unauth, smb_unauth, dns"
+                echo "  users, groups, inactive, computers, password, gpo"
+                echo "  shares, delegation, acl, trusts, laps, adcs"
+                echo "  vulns, misc, bloodhound"
+                exit 0
+                ;;
             -*)
                 echo "Option inconnue: $1"
                 show_help
@@ -2130,7 +2830,7 @@ main() {
     echo -e "${CYAN}"
     cat <<'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v1.0            ║
+║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v2.0            ║
 ║     Enterprise AD Security Assessment Framework              ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
@@ -2185,11 +2885,17 @@ EOF
     test_connectivity
 
     if [ "$unauth_only" = true ]; then
+        TOTAL_MODULES=5
+        CURRENT_MODULE=0
         print_header "MODE NON AUTHENTIFIÉ"
-        audit_inventory
-        audit_dc_config
-        audit_ldap_unauth
+        should_run_module "inventory" && { show_progress "Inventaire"; audit_inventory; }
+        should_run_module "dc_config" && { show_progress "Configuration DC"; audit_dc_config; }
+        should_run_module "ldap_unauth" && { show_progress "LDAP Anonyme"; audit_ldap_unauth; }
+        should_run_module "smb_unauth" && { show_progress "SMB Anonyme"; audit_smb_unauth; }
+        should_run_module "dns" && { show_progress "Sécurité DNS"; audit_dns; }
     else
+        TOTAL_MODULES=20
+        CURRENT_MODULE=0
         # Get credentials
         if [ -z "$username" ]; then
             read -p "Nom d'utilisateur: " username
@@ -2202,20 +2908,23 @@ EOF
         print_header "AUDIT COMPLET — ${DOMAIN}"
         log "INFO" "Audit complet démarré — user: ${username} | domain: ${DOMAIN} | dc: ${DC_IP}"
 
-        audit_inventory
-
         # Credential quick test BEFORE dc_config to enable SMB signing cross-validation
         local password
         password=$(<"${pwd_file}")
         if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
             smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\"" \
                 > "${OUTPUT_DIR}/cred_test.txt" 2>&1 || true
-            # Redact password immediately
             sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
         fi
 
-        audit_dc_config
-        audit_ldap_unauth
+        # Unauthenticated modules first
+        should_run_module "inventory" && { show_progress "Inventaire"; audit_inventory; }
+        should_run_module "dc_config" && { show_progress "Configuration DC"; audit_dc_config; }
+        should_run_module "ldap_unauth" && { show_progress "LDAP Anonyme"; audit_ldap_unauth; }
+        should_run_module "smb_unauth" && { show_progress "SMB Anonyme"; audit_smb_unauth; }
+        should_run_module "dns" && { show_progress "Sécurité DNS"; audit_dns; }
+
+        # Authenticated modules
         audit_authenticated "$username" "$pwd_file"
     fi
 
@@ -2228,6 +2937,8 @@ EOF
     generate_log_summary
     generate_report
     generate_html_report
+    generate_json_report
+    generate_remediation_script
     generate_checksums
     create_archive
 
@@ -2242,6 +2953,8 @@ EOF
     echo -e "${GREEN}📝 Log complet:    ${LOG_FILE}${NC}"
     echo -e "${GREEN}📄 Rapport:        ${REPORT_FILE}${NC}"
     echo -e "${GREEN}🌐 Rapport HTML:   ${HTML_REPORT}${NC}"
+    echo -e "${GREEN}📊 Findings JSON:  ${JSON_REPORT}${NC}"
+    echo -e "${GREEN}🔧 Remédiation:    ${REMEDIATION_FILE}${NC}"
     echo -e "${GREEN}🔒 Checksums:      ${OUTPUT_DIR}/checksums.sha256${NC}"
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
