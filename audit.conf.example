@@ -1,4 +1,4 @@
-# Active Directory Audit Configuration
+# Active Directory Audit Configuration v2.0
 # Usage: ./activeD_Audit.sh --config audit.conf -u <username>
 
 # ═══════════════════════════════════════════════════════
@@ -15,3 +15,19 @@ NETWORK=[IP_ADDRESS]      # Leave empty for auto-detect from DC_IP
 LDAPS=false                 # Use LDAPS (port 636) instead of LDAP (389)
 INACTIVITY_DAYS=90          # Days before a user is considered inactive
 ENCRYPT_OUTPUT=false        # GPG-encrypt the final archive
+
+# ═══════════════════════════════════════════════════════
+# MODULES (v2.0)
+# ═══════════════════════════════════════════════════════
+# SELECTED_MODULES=         # Comma-separated list of modules to run (empty = all)
+# SKIP_MODULES=             # Comma-separated list of modules to skip
+#
+# Available modules:
+#   Unauthenticated: inventory, dc_config, ldap_unauth, smb_unauth, dns
+#   Authenticated:   users, groups, inactive, computers, password, gpo,
+#                    shares, delegation, acl, trusts, laps, adcs,
+#                    vulns, misc, bloodhound
+#
+# Examples:
+#   SELECTED_MODULES=users,groups,password,bloodhound
+#   SKIP_MODULES=bloodhound,adcs

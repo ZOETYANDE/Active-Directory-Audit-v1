@@ -1,6 +1,17 @@
-# 🛡️ AD Audit Framework v1.4.1
+# 🛡️ AD Audit Framework v2.0
 
-Enterprise-grade Active Directory security assessment tool. Automates comprehensive AD auditing — from network discovery to BloodHound collection, ADCS analysis, and delegated permissions review — with professional HTML and text reporting.
+Enterprise-grade Active Directory security assessment tool. Automates comprehensive AD auditing — from network discovery to CVE detection, BloodHound collection, ADCS analysis, and delegated permissions review — with professional HTML, JSON, and PowerShell remediation reporting.
+
+## 🆕 What's New in v2.0
+
+- **5 new audit modules**: Shares, SMB Unauth, DNS, Vulnerabilities (CVEs), Hardening
+- **20+ new security checks**: PrintNightmare, PetitPotam, ZeroLogon, EternalBlue, noPac, MachineAccountQuota, passwords in descriptions, reversible encryption, DES-only Kerberos, Pre-Windows 2000 group, Protected Users, AD Recycle Bin, functional level, AdminCount orphans
+- **enum4linux-ng activated**: Anonymous SMB enumeration now runs automatically
+- **Module selector**: `--modules` and `--skip` to run only what you need
+- **Progress tracking**: Real-time progress bar with elapsed time
+- **3 new output files**: `findings.json` (SIEM), `REMEDIATION.ps1` (PowerShell fixes), `17_DNS/`
+- **Bilingual group detection**: Works on both English and French-locale DCs
+- **Auto-generated remediation**: PowerShell script with fix commands for each finding
 
 ## ✨ Features
 
@@ -8,16 +19,21 @@ Enterprise-grade Active Directory security assessment tool. Automates comprehens
 |----------|-------------|
 | 🔍 **Discovery** | Network scan, AD service detection, SMB protocol analysis |
 | 🔐 **Authentication** | NetExec/CrackMapExec/LDAP credential validation |
-| 👥 **Users & Groups** | Inactive accounts, password-never-expires, AS-REP Roasting, Kerberoasting, privileged groups |
+| 👥 **Users & Groups** | Inactive accounts, pwd-never-expires, AS-REP Roasting, Kerberoasting, passwords in descriptions, reversible encryption, DES-only, recently created accounts, bilingual group enumeration, Pre-Windows 2000, Protected Users |
 | 🔑 **Password Policy** | Default domain policy, FGPP, lockout thresholds |
 | 📋 **GPO** | GPO enumeration, GPP password detection (MS14-025) |
+| 📂 **Shares** | SMB share enumeration, writable shares, SYSVOL content scan |
 | 🔗 **Delegation** | Unconstrained, constrained, RBCD |
 | 🛡️ **ACL** | AdminSDHolder, adminCount analysis |
 | 🌐 **Trusts** | Forest/domain trusts, SID filtering |
 | 💻 **LAPS** | Schema detection, coverage analysis |
 | 📜 **ADCS** | CA enumeration, ESC1-ESC8 vulnerability detection (certipy) |
 | 🩸 **BloodHound** | Automated collection with FQDN auto-resolution |
-| 📊 **Reporting** | HTML report, text report, security summary, SHA256 checksums |
+| 🔓 **SMB Unauth** | enum4linux-ng, null session testing, anonymous share access |
+| 🌍 **DNS** | Zone transfer test, wildcard detection, SRV enumeration |
+| 💥 **Vulnerabilities** | PrintNightmare, PetitPotam, ZeroLogon, noPac, EternalBlue (MS17-010) |
+| 🏗️ **Hardening** | MachineAccountQuota, functional level, Recycle Bin, AdminCount orphans |
+| 📊 **Reporting** | HTML report, JSON findings, PowerShell remediation, text report, SHA256 checksums |
 
 ## 🚀 Quick Start
 
@@ -26,13 +42,22 @@ Enterprise-grade Active Directory security assessment tool. Automates comprehens
 sudo ./requirements.sh
 
 # 2. Run a full audit
-./activeD_Audit.sh -t [IP_ADDRESS] -d [YOUR DOMAIN] -u [USERNAME]
+./activeD_Audit.sh -t 192.168.199.10 -d LAB.LOCAL -u john.doe
 
 # 3. Run with config file
-./activeD_Audit.sh --config audit.conf -u [USERNAME]
+./activeD_Audit.sh --config audit.conf -u auditor
 
 # 4. Non-authenticated scan only
-./activeD_Audit.sh -t [IP_ADDRESS] -d [YOUR DOMAIN] --unauth-only
+./activeD_Audit.sh -t 192.168.199.10 -d LAB.LOCAL --unauth-only
+
+# 5. Run specific modules only
+./activeD_Audit.sh -t 192.168.199.10 -d LAB.LOCAL -u admin --modules users,groups,bloodhound
+
+# 6. Skip heavy modules
+./activeD_Audit.sh -t 192.168.199.10 -d LAB.LOCAL -u admin --skip bloodhound,adcs
+
+# 7. List available modules
+./activeD_Audit.sh --list-modules
 ```
 
 ## 📖 Usage
@@ -42,13 +67,18 @@ sudo ./requirements.sh
 
 TARGET:
   -t, --target <IP>         DC IP address
-  -d, --domain <DOMAIN>     AD domain (e.g. [YOUR DOMAIN])
+  -d, --domain <DOMAIN>     AD domain (e.g. CORP.LOCAL)
   -n, --network <CIDR>      Network range (auto-detected if omitted)
   --dc-hostname <NAME>      DC hostname for BloodHound
 
 AUTHENTICATION:
   -u, --user <username>     AD username
   --unauth-only             Non-authenticated tests only
+
+MODULES:
+  --modules <list>          Comma-separated modules to run
+  --skip <list>             Comma-separated modules to skip
+  --list-modules            Show available modules
 
 OPTIONS:
   --config <file>           Load config from file
@@ -63,34 +93,66 @@ DEBUG:
   -h, --help                Show help
 ```
 
+### Available Modules
+
+| Module | Type | Description |
+|--------|------|-------------|
+| `inventory` | Unauth | Network discovery (nmap) |
+| `dc_config` | Unauth | SMBv1, SMB signing, LDAP signing |
+| `ldap_unauth` | Unauth | Anonymous LDAP bind test |
+| `smb_unauth` | Unauth | enum4linux-ng, null sessions |
+| `dns` | Unauth | Zone transfer, wildcard, SRV records |
+| `users` | Auth | User accounts, passwords in descriptions, encryption flags |
+| `groups` | Auth | Privileged groups (EN/FR), Pre-Win2000, Protected Users |
+| `inactive` | Auth | Inactive user accounts |
+| `computers` | Auth | Computer objects, obsolete OS |
+| `password` | Auth | Password policy, FGPP |
+| `gpo` | Auth | GPO enumeration, GPP passwords |
+| `shares` | Auth | SMB shares, writable shares, SYSVOL scan |
+| `delegation` | Auth | Unconstrained, constrained, RBCD |
+| `acl` | Auth | AdminSDHolder, adminCount, DCSync |
+| `trusts` | Auth | Trust relationships, SID filtering |
+| `laps` | Auth | LAPS schema and coverage |
+| `adcs` | Auth | ADCS CA servers, ESC1-ESC8 |
+| `vulns` | Auth | PrintNightmare, PetitPotam, ZeroLogon, noPac, EternalBlue |
+| `misc` | Auth | MachineAccountQuota, functional level, Recycle Bin |
+| `bloodhound` | Auth | BloodHound collection |
+
 ## 🏗️ Architecture
 
 ```
-activeD_Audit.sh
+activeD_Audit.sh (20 modules)
 ├── Phase 1: Prerequisites & Connectivity
-│   ├── Tool detection (nmap, ldapsearch, nxc, certipy...)
+│   ├── Tool detection (nmap, ldapsearch, nxc, certipy, enum4linux-ng, dig...)
 │   └── Port scanning (Kerberos, LDAP, SMB, LDAPS, GC)
 │
 ├── Phase 2: Non-Authenticated Audits
 │   ├── Network inventory (parallel nmap scans)
 │   ├── DC configuration (SMBv1, SMB signing, LDAP signing)
-│   └── LDAP anonymous bind test
+│   ├── LDAP anonymous bind test
+│   ├── SMB anonymous enumeration (enum4linux-ng, null sessions)   [NEW]
+│   └── DNS security (zone transfer, wildcard, SRV)                [NEW]
 │
-├── Phase 3: Authenticated Audits
-│   ├── User accounts (pwd never expires, AS-REP, disabled)
-│   ├── Privileged groups (8 groups + Kerberoastable SPNs)
+├── Phase 3: Authenticated Audits (with progress tracking)
+│   ├── User accounts (pwd never expires, AS-REP, descriptions, encryption)
+│   ├── Privileged groups (8 groups EN/FR + Pre-Win2000 + Protected Users)
 │   ├── Inactive users & computers (obsolete OS detection)
 │   ├── Password policy (default + FGPP)
 │   ├── GPO audit (enumeration + GPP passwords)
+│   ├── SMB shares (enumeration, writable, SYSVOL scan)            [NEW]
 │   ├── Kerberos delegation (unconstrained, constrained, RBCD)
 │   ├── ACL abuse (adminCount, AdminSDHolder)
 │   ├── Trust relationships (SID filtering)
 │   ├── LAPS (schema + coverage analysis)
 │   ├── ADCS (CA servers, ESC1-ESC8 via certipy)
+│   ├── Vulnerabilities (PrintNightmare, PetitPotam, ZeroLogon...) [NEW]
+│   ├── Hardening (MAQ, functional level, Recycle Bin, orphans)    [NEW]
 │   └── BloodHound collection (FQDN auto-resolution)
 │
 └── Phase 4: Reporting
     ├── HTML report (dark theme, findings table, risk score)
+    ├── JSON findings export (SIEM integration)                    [NEW]
+    ├── PowerShell remediation script                              [NEW]
     ├── Text report + security summary
     ├── SHA256 checksums
     └── Encrypted .tar.gz archive (optional)
@@ -100,28 +162,31 @@ activeD_Audit.sh
 
 ```
 DOMAIN_Audit_YYYYMMDD_HHMMSS/
-├── 00_RESUME_SECURITE.txt
-├── RAPPORT_AUDIT_AD.txt
+├── 00_RESUME_SECURITE.txt         ← Risk summary
 ├── RAPPORT_AUDIT_AD.html          ← Professional HTML report
-├── audit_execution.log
-├── log_summary.txt
-├── checksums.sha256
+├── RAPPORT_AUDIT_AD.txt           ← Text report
+├── findings.json                  ← Machine-readable findings (SIEM)     [NEW]
+├── REMEDIATION.ps1                ← PowerShell fix commands              [NEW]
+├── audit_execution.log            ← Full execution log
+├── log_summary.txt                ← Log statistics
+├── checksums.sha256               ← Integrity verification
 ├── 01_Inventaire/                 ← Network discovery
 ├── 02_Configuration_DC/           ← SMB/LDAP config
 ├── 03_Comptes_Utilisateurs/       ← User analysis
-├── 04_Groupes_Privileges/         ← Group membership
+├── 04_Groupes_Privileges/         ← Group membership (EN/FR)
 ├── 05_Politique_Mots_de_Passe/    ← Password policies
 ├── 06_GPO/                        ← Group policy
-├── 07_Partages/                   ← Shares
-├── 08_Vulnerabilites/             ← Vulns
+├── 07_Partages/                   ← SMB shares & SYSVOL                  [NEW]
+├── 08_Vulnerabilites/             ← CVE checks + enum4linux-ng           [NEW]
 ├── 09_BloodHound/                 ← BloodHound data
-├── 10_Preuves/                    ← Evidence
+├── 10_Hardening/                  ← MAQ, functional level, Recycle Bin   [NEW]
 ├── 11_Ordinateurs/                ← Computer objects
 ├── 12_Delegation/                 ← Kerberos delegation
 ├── 13_ACL/                        ← ACL analysis
 ├── 14_Trusts/                     ← Trust relationships
 ├── 15_LAPS/                       ← LAPS coverage
-└── 16_Certificats/                ← ADCS analysis
+├── 16_Certificats/                ← ADCS analysis
+└── 17_DNS/                        ← DNS security tests                   [NEW]
 ```
 
 ## 🔧 Dependencies
@@ -136,18 +201,45 @@ DOMAIN_Audit_YYYYMMDD_HHMMSS/
 | `impacket` | BloodHound dependency |
 
 ### Optional (enhances audit depth)
-| Tool | Purpose |
-|------|---------|
-| `nxc` (NetExec) | SMB enumeration, GPP passwords |
-| `certipy` | ADCS vulnerability scanning |
-| `enum4linux-ng` | Extended enumeration |
-| `gpg` | Output encryption |
+| Tool | Purpose | Module |
+|------|---------|--------|
+| `nxc` (NetExec) | SMB enumeration, GPP passwords, CVE checks | shares, vulns, dc_config |
+| `certipy` | ADCS vulnerability scanning (ESC1-ESC8) | adcs |
+| `enum4linux-ng` | Anonymous SMB enumeration | smb_unauth |
+| `smbclient` | SYSVOL content scanning, null share test | shares, smb_unauth |
+| `dig` | DNS zone transfer, wildcard, SRV records | dns |
+| `rpcdump.py` | RPC service enumeration | vulns |
+| `gpg` | Output encryption | archive |
 
 Install everything:
 ```bash
-sudo ./requirements.sh           # Install all
-sudo ./requirements.sh --check-only  # Verify only
+sudo ./requirements.sh              # Install all
+sudo ./requirements.sh --check-only # Verify only
 ```
+
+## 🌍 Internationalization
+
+The script supports **bilingual group detection** for both English and French-locale Active Directory installations:
+
+| English DC | French DC |
+|-----------|----------|
+| Domain Admins | Admins du domaine |
+| Enterprise Admins | Administrateurs de l'entreprise |
+| Administrators | Administrateurs |
+| Schema Admins | Administrateurs du schéma |
+| Account Operators | Opérateurs de compte |
+| Backup Operators | Opérateurs de sauvegarde |
+| Server Operators | Opérateurs de serveur |
+
+Group membership is also resolved via `primaryGroupID` fallback for the built-in Administrator account.
+
+## 🔒 Security
+
+- Passwords are stored in temporary files with mode `600` and securely deleted after use
+- All output files containing credentials are automatically redacted (`[REDACTED]`)
+- Output directory is created with mode `700`
+- Optional GPG encryption of the final archive (`--encrypt`)
+- `umask 077` enforced throughout execution
 
 ## ⚠️ Disclaimer
 
