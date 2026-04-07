@@ -2,7 +2,7 @@
 
 #===============================================================================
 #
-# ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v4.0
+# ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v1.0
 #
 # Enterprise-grade AD security assessment tool
 # Supports: Dynamic config, NetExec, LDAPS, BloodHound, ADCS, GPO, LAPS
@@ -17,7 +17,7 @@ set -u
 #===============================================================================
 # CONFIGURATION DEFAULTS (overridden by CLI args or config file)
 #===============================================================================
-readonly SCRIPT_VERSION="1.4.01"
+readonly SCRIPT_VERSION="1.0"
 readonly AUDIT_REF="Audit - Sécurité Active Directory"
 
 # Target config — set via CLI or config file
@@ -335,7 +335,11 @@ cleanup_password() {
 # SIGNAL HANDLER — kill bg processes, cleanup, generate partial report
 #===============================================================================
 
-cleanup_all() {
+cleanup_normal() {
+    cleanup_password
+}
+
+cleanup_interrupted() {
     echo ""
     echo -e "${YELLOW}[!] Interruption détectée — nettoyage en cours...${NC}"
     log "WARNING" "Script interrompu — nettoyage"
@@ -776,19 +780,32 @@ audit_dc_config() {
     fi
 
     print_test "Signature SMB"
-    nmap -T4 -Pn -p 445 --script smb-security-mode "${DC_IP}" \
-        -oN "${output_dir}/smb_signing.txt" 2>/dev/null || true
+    local smb_signing_confirmed=false
 
-    if [ -f "${output_dir}/smb_signing.txt" ]; then
-        if grep -qi "signing.*required" "${output_dir}/smb_signing.txt"; then
-            print_success "Signature SMB requise"
-            add_finding "INFO" "Signature SMB Requise" "La signature SMB est correctement requise." ""
-        else
-            print_warning "Signature SMB non requise - Risque NTLM relay"
-            add_finding "HIGH" "Signature SMB Non Requise" "La signature SMB n'est pas requise. Risque d'attaque NTLM relay." "${output_dir}/smb_signing.txt"
+    # Cross-validate with nxc/cme if cred_test.txt exists (most reliable)
+    if [ -f "${OUTPUT_DIR}/cred_test.txt" ]; then
+        if grep -qi "signing:True" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null; then
+            print_success "Signature SMB requise (confirmé par NetExec)"
+            add_finding "INFO" "Signature SMB Requise" "La signature SMB est correctement requise (confirmé par NetExec)." ""
+            smb_signing_confirmed=true
         fi
-    else
-        print_warning "Impossible de vérifier signature"
+    fi
+
+    if [ "${smb_signing_confirmed}" = false ]; then
+        nmap -T4 -Pn -p 445 --script smb-security-mode "${DC_IP}" \
+            -oN "${output_dir}/smb_signing.txt" 2>/dev/null || true
+
+        if [ -f "${output_dir}/smb_signing.txt" ]; then
+            if grep -qiE "message_signing:.*required|signing.*required" "${output_dir}/smb_signing.txt"; then
+                print_success "Signature SMB requise"
+                add_finding "INFO" "Signature SMB Requise" "La signature SMB est correctement requise." ""
+            else
+                print_warning "Signature SMB non requise - Risque NTLM relay"
+                add_finding "HIGH" "Signature SMB Non Requise" "La signature SMB n'est pas requise. Risque d'attaque NTLM relay." "${output_dir}/smb_signing.txt"
+            fi
+        else
+            print_warning "Impossible de vérifier signature"
+        fi
     fi
 
     # LDAP Signing check
@@ -861,8 +878,11 @@ audit_authenticated() {
 
         if grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt"; then
             print_success "Identifiants valides"
+            # Redact password from output file for security
+            sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
         else
             print_error "Identifiants invalides"
+            sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
             stop_timer "authenticated"
             return 1
         fi
@@ -991,7 +1011,7 @@ audit_groups() {
             "member" "${output_dir}/group_${group// /_}.txt"
 
         local member_count
-        member_count=$(safe_count "member:" "${output_dir}/group_${group// /_}.txt")
+        member_count=$(grep -cE "^member:|^member::" "${output_dir}/group_${group// /_}.txt" 2>/dev/null || echo "0")
         print_info "Groupe '${group}': ${member_count} membres"
 
         if [[ "${group}" =~ ^(Domain Admins|Enterprise Admins|Schema Admins)$ ]] && [ "${member_count}" -gt 5 ]; then
@@ -1159,7 +1179,7 @@ audit_password_policy() {
     if [ "${fgpp_count}" -gt 0 ]; then
         print_success "${fgpp_count} politiques granulaires"
     else
-        print_info "Aucune FGPP — politique par défaut uniquement"
+        print_success "Aucune FGPP — politique par défaut uniquement"
     fi
 
     stop_timer "password_policy"
@@ -1206,7 +1226,7 @@ audit_gpo() {
             -M gpp_password > "${output_dir}/gpp_passwords.txt" 2>&1 || true
     fi
 
-    if [ -f "${output_dir}/gpp_passwords.txt" ] && grep -qi "password" "${output_dir}/gpp_passwords.txt"; then
+    if [ -f "${output_dir}/gpp_passwords.txt" ] && grep -qiE "Found|cpassword|userName.*:" "${output_dir}/gpp_passwords.txt" 2>/dev/null; then
         print_error "🔴 Mots de passe GPP trouvés!"
         add_finding "CRITICAL" "Mots de Passe GPP (MS14-025)" "Des mots de passe en clair ont été trouvés dans les préférences de stratégie de groupe." "${output_dir}/gpp_passwords.txt"
     else
@@ -1315,7 +1335,11 @@ audit_acl_abuse() {
         password=$(<"${pwd_file}")
         smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" --users" \
             > "${output_dir}/users_enum.txt" 2>&1 || true
-        print_info "Énumération ACL complétée via SMB tool (analyse manuelle recommandée)"
+        # Redact password from users_enum output
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/users_enum.txt" 2>/dev/null || true
+        print_success "Énumération ACL complétée via SMB tool (analyse manuelle recommandée)"
+    else
+        print_success "Analyse ACL via LDAP uniquement (pas d'outil SMB)"
     fi
 
     # BloodHound handles deep ACL analysis — note this
@@ -1491,7 +1515,7 @@ audit_adcs() {
             print_info "💡 Installez certipy-ad pour une analyse ADCS complète"
         fi
     else
-        print_info "Aucune CA — ADCS non déployé"
+        print_success "Aucune CA — ADCS non déployé"
     fi
 
     stop_timer "adcs"
@@ -1540,7 +1564,9 @@ audit_bloodhound() {
     domain_lower=$(echo "${DOMAIN}" | tr '[:upper:]' '[:lower:]')
 
     if [ -n "${DC_HOSTNAME}" ]; then
-        dc_fqdn="${DC_HOSTNAME}.${domain_lower}"
+        # Strip any existing domain suffix to avoid double-domain (e.g. HOST.domain.domain)
+        local hostname_base="${DC_HOSTNAME%%.*}"
+        dc_fqdn="${hostname_base}.${domain_lower}"
         print_info "✓ FQDN configuré: ${dc_fqdn}"
     else
         # Try reverse DNS
@@ -2099,7 +2125,7 @@ main() {
     echo -e "${CYAN}"
     cat <<'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v4.0            ║
+║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v1.0            ║
 ║     Enterprise AD Security Assessment Framework              ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
@@ -2136,8 +2162,9 @@ EOF
     # Setup environment (creates dirs, sets paths)
     setup_environment
 
-    # Trap for cleanup
-    trap cleanup_all EXIT INT TERM
+    # Trap for cleanup — separate normal exit from interrupt
+    trap cleanup_normal EXIT
+    trap cleanup_interrupted INT TERM
 
     # Print config summary
     print_info "🎯 Cible: ${DC_IP} | Domaine: ${DOMAIN} | Réseau: ${NETWORK}"
