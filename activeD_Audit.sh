@@ -869,16 +869,17 @@ audit_authenticated() {
     local password
     password=$(<"${pwd_file}")
 
-    # Credential validation
+    # Credential validation — reuse cred_test.txt if already created in main()
     print_test "Validation des identifiants (${username})"
 
-    if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
+    if [ -f "${OUTPUT_DIR}/cred_test.txt" ] && grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null; then
+        print_success "Identifiants valides"
+    elif [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
         smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\"" \
             > "${OUTPUT_DIR}/cred_test.txt" 2>&1
 
         if grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt"; then
             print_success "Identifiants valides"
-            # Redact password from output file for security
             sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
         else
             print_error "Identifiants invalides"
@@ -1011,7 +1012,11 @@ audit_groups() {
             "member" "${output_dir}/group_${group// /_}.txt"
 
         local member_count
-        member_count=$(grep -cE "^member:|^member::" "${output_dir}/group_${group// /_}.txt" 2>/dev/null || echo "0")
+        member_count=$(grep -cE "^member:|^member::" "${output_dir}/group_${group// /_}.txt" 2>/dev/null || true)
+        # Sanitize: ensure it's a valid number
+        if ! [[ "${member_count}" =~ ^[0-9]+$ ]]; then
+            member_count=0
+        fi
         print_info "Groupe '${group}': ${member_count} membres"
 
         if [[ "${group}" =~ ^(Domain Admins|Enterprise Admins|Schema Admins)$ ]] && [ "${member_count}" -gt 5 ]; then
@@ -1226,7 +1231,7 @@ audit_gpo() {
             -M gpp_password > "${output_dir}/gpp_passwords.txt" 2>&1 || true
     fi
 
-    if [ -f "${output_dir}/gpp_passwords.txt" ] && grep -qiE "Found|cpassword|userName.*:" "${output_dir}/gpp_passwords.txt" 2>/dev/null; then
+    if [ -f "${output_dir}/gpp_passwords.txt" ] && grep -qiE "\[\+\].*gpp|cpassword" "${output_dir}/gpp_passwords.txt" 2>/dev/null; then
         print_error "🔴 Mots de passe GPP trouvés!"
         add_finding "CRITICAL" "Mots de Passe GPP (MS14-025)" "Des mots de passe en clair ont été trouvés dans les préférences de stratégie de groupe." "${output_dir}/gpp_passwords.txt"
     else
@@ -2198,6 +2203,17 @@ EOF
         log "INFO" "Audit complet démarré — user: ${username} | domain: ${DOMAIN} | dc: ${DC_IP}"
 
         audit_inventory
+
+        # Credential quick test BEFORE dc_config to enable SMB signing cross-validation
+        local password
+        password=$(<"${pwd_file}")
+        if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
+            smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\"" \
+                > "${OUTPUT_DIR}/cred_test.txt" 2>&1 || true
+            # Redact password immediately
+            sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+        fi
+
         audit_dc_config
         audit_ldap_unauth
         audit_authenticated "$username" "$pwd_file"
