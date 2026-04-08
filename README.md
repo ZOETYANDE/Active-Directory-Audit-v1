@@ -121,41 +121,36 @@ DEBUG:
 ## 🏗️ Architecture
 
 ```
-activeD_Audit.sh (20 modules)
-├── Phase 1: Prerequisites & Connectivity
-│   ├── Tool detection (nmap, ldapsearch, nxc, certipy, enum4linux-ng, dig...)
-│   └── Port scanning (Kerberos, LDAP, SMB, LDAPS, GC)
-│
-├── Phase 2: Non-Authenticated Audits
-│   ├── Network inventory (parallel nmap scans)
-│   ├── DC configuration (SMBv1, SMB signing, LDAP signing)
-│   ├── LDAP anonymous bind test
-│   ├── SMB anonymous enumeration (enum4linux-ng, null sessions)   [NEW]
-│   └── DNS security (zone transfer, wildcard, SRV)                [NEW]
-│
-├── Phase 3: Authenticated Audits (with progress tracking)
-│   ├── User accounts (pwd never expires, AS-REP, descriptions, encryption)
-│   ├── Privileged groups (8 groups EN/FR + Pre-Win2000 + Protected Users)
-│   ├── Inactive users & computers (obsolete OS detection)
-│   ├── Password policy (default + FGPP)
-│   ├── GPO audit (enumeration + GPP passwords)
-│   ├── SMB shares (enumeration, writable, SYSVOL scan)            [NEW]
-│   ├── Kerberos delegation (unconstrained, constrained, RBCD)
-│   ├── ACL abuse (adminCount, AdminSDHolder)
-│   ├── Trust relationships (SID filtering)
-│   ├── LAPS (schema + coverage analysis)
-│   ├── ADCS (CA servers, ESC1-ESC8 via certipy)
-│   ├── Vulnerabilities (PrintNightmare, PetitPotam, ZeroLogon...) [NEW]
-│   ├── Hardening (MAQ, functional level, Recycle Bin, orphans)    [NEW]
-│   └── BloodHound collection (FQDN auto-resolution)
-│
-└── Phase 4: Reporting
-    ├── HTML report (dark theme, findings table, risk score)
-    ├── JSON findings export (SIEM integration)                    [NEW]
-    ├── PowerShell remediation script                              [NEW]
-    ├── Text report + security summary
-    ├── SHA256 checksums
-    └── Encrypted .tar.gz archive (optional)
+activeD_Audit.sh                    ← Entry point (400 lines — globals, CLI, main flow)
+lib/
+├── core.sh                         ← Logging, display, timers, findings, utilities
+├── config.sh                       ← Config loading, requirements, environment setup
+├── modules/
+│   ├── inventory.sh                ← Network discovery (nmap)
+│   ├── dc_config.sh                ← SMBv1, SMB signing, LDAP signing
+│   ├── ldap_unauth.sh              ← Anonymous LDAP bind test
+│   ├── smb_unauth.sh               ← enum4linux-ng, null sessions
+│   ├── dns.sh                      ← Zone transfer, wildcard, SRV
+│   ├── authenticated.sh            ← Auth orchestrator
+│   ├── users.sh                    ← User accounts, passwords, encryption flags
+│   ├── groups.sh                   ← Privileged groups (EN/FR bilingual)
+│   ├── inactive.sh                 ← Inactive users & computers
+│   ├── password_policy.sh          ← Default policy + FGPP
+│   ├── gpo.sh                      ← GPO + GPP passwords
+│   ├── shares.sh                   ← SMB shares, SYSVOL
+│   ├── delegation.sh               ← Unconstrained, constrained, RBCD
+│   ├── acl.sh                      ← AdminSDHolder, DCSync
+│   ├── trusts.sh                   ← Trust relationships
+│   ├── laps.sh                     ← LAPS schema + coverage
+│   ├── adcs.sh                     ← CA servers, ESC1-ESC8
+│   ├── vulns.sh                    ← PrintNightmare, PetitPotam, ZeroLogon
+│   ├── misc.sh                     ← MAQ, functional level, Recycle Bin
+│   └── bloodhound.sh               ← BloodHound collection
+└── reporting/
+    ├── html_report.sh              ← HTML report (dark theme, risk score)
+    ├── json_export.sh              ← SIEM-ready JSON findings
+    ├── remediation.sh              ← PowerShell remediation script
+    └── text_reports.sh             ← Text report, summary, checksums, archive
 ```
 
 ## 📁 Output Structure
