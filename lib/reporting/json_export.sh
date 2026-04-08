@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/reporting/json_export.sh
 
 generate_json_report() {
@@ -45,8 +45,4 @@ generate_json_report() {
     print_success "Rapport JSON: ${JSON_REPORT}"
     log "INFO" "JSON report generated: ${JSON_REPORT}"
 }
-
-#===============================================================================
-# POWERSHELL REMEDIATION SCRIPT  [NEW v2.0]
-#===============================================================================
 
