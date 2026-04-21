@@ -12,26 +12,36 @@ log() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    [ -d "${OUTPUT_DIR}" ] || mkdir -p "${OUTPUT_DIR}"
+    # PROTECTION : Ne rien faire si OUTPUT_DIR n'est pas encore défini
+    if [ -z "${OUTPUT_DIR}" ]; then
+        return 0
+    fi
 
+    # Création sécurisée du répertoire
+    [ -d "${OUTPUT_DIR}" ] || mkdir -p "${OUTPUT_DIR}" 2>/dev/null
+
+    # Initialisation du fichier de log s'il n'existe pas
     if [ ! -f "${LOG_FILE}" ]; then
+        # Utilisation de <<-EOF pour permettre l'indentation avec des TABULATIONS si besoin
+        # Mais attention : EOF doit être strictement collé au début de ligne
         cat > "${LOG_FILE}" <<EOF
 ================================================================================
-LOG D'EXÉCUTION - AUDIT AD v${SCRIPT_VERSION}
+LOG D'EXÉCUTION - AUDIT AD v${SCRIPT_VERSION:-"1.0"}
 ================================================================================
-Date démarrage : $(date '+%Y-%m-%d %H:%M:%S')
-Version script : ${SCRIPT_VERSION}
-Mode debug     : ${DEBUG_MODE}
-Mode verbose   : ${VERBOSE_MODE}
-Domaine        : ${DOMAIN}
-Contrôleur DC  : ${DC_IP}
-Réseau         : ${NETWORK}
-LDAPS          : ${LDAPS_MODE}
+Date démarrage : ${timestamp}
+Version script : ${SCRIPT_VERSION:-"1.0"}
+Mode debug     : ${DEBUG_MODE:-false}
+Mode verbose   : ${VERBOSE_MODE:-false}
+Domaine        : ${DOMAIN:-"N/A"}
+Contrôleur DC  : ${DC_IP:-"N/A"}
+Réseau         : ${NETWORK:-"N/A"}
+LDAPS          : ${LDAPS_MODE:-false}
 ================================================================================
 
 EOF
     fi
 
+    # Écriture dans le fichier de log
     echo "[${timestamp}] [${level}] ${message}" >> "${LOG_FILE}"
 }
 
