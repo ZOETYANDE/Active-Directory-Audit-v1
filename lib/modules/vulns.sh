@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/vulns.sh
 
 audit_vulnerabilities() {
@@ -28,19 +28,22 @@ audit_vulnerabilities() {
             print_success "Print Spooler non actif ou non détecté"
         fi
 
-        # PetitPotam
-        print_test "PetitPotam (NTLM Coercion via EFS)"
-        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" -M petitpotam" \
-            > "${output_dir}/petitpotam.txt" 2>&1 || true
-        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/petitpotam.txt" 2>/dev/null || true
+        # Coercion Attacks (PetitPotam, DFSCoerce, PrinterBug, etc.)
+        print_test "Attaques de Coercition NTLM (via coerce_plus)"
+        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" -M coerce_plus" \
+            > "${output_dir}/coercion.txt" 2>&1 || true
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/coercion.txt" 2>/dev/null || true
 
-        if grep -qiE "vulnerable|Vulnerable" "${output_dir}/petitpotam.txt" 2>/dev/null; then
-            print_error "🔴 Vulnérable à PetitPotam!"
-            add_finding_remediation "HIGH" "PetitPotam (NTLM Coercion)" "Le DC est vulnérable à PetitPotam. Un attaquant peut forcer l'authentification NTLM." \
-                "${output_dir}/petitpotam.txt" \
-                "# Mitigate PetitPotam — Enable EPA and disable NTLM where possible\n# Apply KB5005413 and restrict NTLM authentication"
+        if grep -qi "VULNERABLE" "${output_dir}/coercion.txt" 2>/dev/null; then
+            local vulns_found
+            vulns_found=$(grep -i "VULNERABLE" "${output_dir}/coercion.txt" | cut -d',' -f2 | xargs | sed 's/ /, /g')
+            print_error "🔴 Vulnérable aux attaques de coercition : ${vulns_found}!"
+            add_finding_remediation "HIGH" "Attaques de Coercition NTLM (${vulns_found})" \
+                "Le DC est vulnérable à plusieurs vecteurs de coercition NTLM : ${vulns_found}. Un attaquant peut forcer l'authentification NTLM vers une machine qu'il contrôle." \
+                "${output_dir}/coercion.txt" \
+                "# Remédiations :\n# 1. Désactiver NTLM là où c'est possible\n# 2. Activer Extended Protection for Authentication (EPA)\n# 3. Utiliser des filtres RPC pour bloquer les méthodes vulnérables\n# 4. Appliquer les correctifs (ex: KB5005413)"
         else
-            print_success "PetitPotam non vulnérable ou non détecté"
+            print_success "Aucune vulnérabilité de coercition NTLM détectée"
         fi
 
         # ZeroLogon (safe check)
