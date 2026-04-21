@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/acl.sh
 
 audit_acl_abuse() {

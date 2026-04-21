@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/delegation.sh
 
 audit_delegation() {

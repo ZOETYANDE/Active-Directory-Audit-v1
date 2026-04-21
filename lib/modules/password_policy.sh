@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/password_policy.sh
 
 audit_password_policy() {
@@ -14,19 +14,18 @@ audit_password_policy() {
 
     # Default Domain Policy
     print_test "Politique de mot de passe par défaut"
-    ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
-        -b "${BASE_DN}" -s base \
+    ldap_search "${username}" "${pwd_file}" \
         "(objectClass=domain)" \
-        minPwdLength maxPwdAge minPwdAge pwdHistoryLength lockoutThreshold lockoutDuration lockoutObservationWindow pwdProperties \
-        > "${output_dir}/default_policy.txt" 2>&1 || true
+        "minPwdLength maxPwdAge minPwdAge pwdHistoryLength lockoutThreshold lockoutDuration lockoutObservationWindow pwdProperties" \
+        "${output_dir}/default_policy.txt"
 
-    if [ -f "${output_dir}/default_policy.txt" ]; then
+    if [ -s "${output_dir}/default_policy.txt" ]; then
         local min_len
-        min_len=$(grep "minPwdLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
+        min_len=$(grep -i "minPwdLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
         local lockout
-        lockout=$(grep "lockoutThreshold:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
+        lockout=$(grep -i "lockoutThreshold:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
         local history
-        history=$(grep "pwdHistoryLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
+        history=$(grep -i "pwdHistoryLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
 
         print_info "📊 Longueur min: ${min_len:-N/A} | Verrouillage: ${lockout:-N/A} | Historique: ${history:-N/A}"
 

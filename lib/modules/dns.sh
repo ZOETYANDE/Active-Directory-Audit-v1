@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/dns.sh
 
 audit_dns() {

@@ -362,9 +362,9 @@ ldap_search() {
 smb_tool_exec() {
     local args="$*"
     if [ "${HAS_NXC}" = true ]; then
-        eval "nxc smb ${args}"
+        nxc smb ${args}
     elif [ "${HAS_CME}" = true ]; then
-        eval "crackmapexec smb ${args}"
+        crackmapexec smb ${args}
     else
         log "WARNING" "No SMB tool available (nxc/crackmapexec)"
         return 1
@@ -381,7 +381,11 @@ show_progress() {
     local i
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty; i++)); do bar+="░"; done
-    local elapsed=$(( $(date +%s) - ${PERF_TIMERS[total_start]:-$(date +%s)} ))
+    local start_time=${PERF_TIMERS[total_start]:-0}
+    local elapsed=0
+    if [ "${start_time}" -gt 0 ]; then
+        elapsed=$(( $(date +%s) - start_time ))
+    fi
     printf "\r${CYAN}[${bar}] %3d%% │ %d/%d: %s │ %ds${NC}        " \
         "$pct" "$CURRENT_MODULE" "$TOTAL_MODULES" "$module_name" "$elapsed" >&2
     echo "" >&2

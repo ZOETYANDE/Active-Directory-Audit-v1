@@ -57,9 +57,12 @@ audit_dc_config() {
 
     if echo "${ldap_result}" | grep -qi "result: 0"; then
         print_warning "LDAP non signé accepté — risque d'interception"
-        add_finding "MEDIUM" "LDAP Binding Non Signé" "Le serveur accepte les connexions LDAP sans signature. Risque de MITM." ""
+        add_finding_remediation "MEDIUM" "LDAP Binding Non Signé" \
+            "Le serveur accepte les connexions LDAP sans signature (Simple Bind). Risque d'interception des identifiants et d'attaques MITM." \
+            "" \
+            "# Enforce LDAP Signing and Channel Binding\n# Apply KB4520412 and set LDAPServerIntegrity to 2\nSet-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters' -Name 'LDAPServerIntegrity' -Value 2"
     else
-        print_success "LDAP sécurisé"
+        print_success "LDAP non signé (Simple Bind) refusé ou non atteint"
     fi
 
     stop_timer "dc_config"

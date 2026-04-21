@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/reporting/remediation.sh
 
 generate_remediation_script() {

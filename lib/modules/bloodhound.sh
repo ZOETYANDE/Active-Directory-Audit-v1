@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/bloodhound.sh — BloodHound collection with FQDN auto-resolution
 
 audit_bloodhound() {
@@ -53,11 +53,11 @@ audit_bloodhound() {
             print_info "✓ FQDN via DNS inverse: ${dc_fqdn}"
         else
             # Try LDAP
+            ldap_search "${username}" "${pwd_file}" \
+                "(objectClass=computer)" "dNSHostName" "${output_dir}/dc_fqdn_ldap.txt"
             local ldap_hostname
-            ldap_hostname=$(ldapsearch -x -H "ldap://${DC_IP}" \
-                -D "${username}@${DOMAIN}" -y "${pwd_file}" \
-                -b "${BASE_DN}" "(objectClass=computer)" dNSHostName 2>/dev/null | \
-                grep -i "dNSHostName:" | head -1 | awk '{print $2}')
+            ldap_hostname=$(grep -i "dNSHostName:" "${output_dir}/dc_fqdn_ldap.txt" | head -1 | awk '{print $2}')
+
             if [ -n "${ldap_hostname}" ]; then
                 dc_fqdn="${ldap_hostname}"
                 print_info "✓ FQDN via LDAP: ${dc_fqdn}"

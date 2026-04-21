@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/inactive.sh
 
 audit_inactive_users() {

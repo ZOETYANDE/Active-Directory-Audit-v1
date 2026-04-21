@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/smb_unauth.sh
 
 audit_smb_unauth() {

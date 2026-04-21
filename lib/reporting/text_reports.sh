@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/reporting/text_reports.sh
 
 generate_security_summary() {

@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/misc.sh
 
 audit_misc() {
@@ -14,15 +14,16 @@ audit_misc() {
 
     # MachineAccountQuota
     print_test "MachineAccountQuota"
+    ldap_search "${username}" "${pwd_file}" \
+        "(objectClass=domain)" "ms-DS-MachineAccountQuota" "${output_dir}/maq.txt"
+    
     local maq
-    maq=$(ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
-        -b "${BASE_DN}" -s base "(objectClass=domain)" ms-DS-MachineAccountQuota 2>/dev/null | \
-        grep "ms-DS-MachineAccountQuota:" | awk '{print $2}')
+    maq=$(grep -i "ms-DS-MachineAccountQuota:" "${output_dir}/maq.txt" | awk '{print $2}' || echo "0")
 
     if [ -n "${maq}" ] && [ "${maq}" -gt 0 ] 2>/dev/null; then
         print_warning "⚠️  MachineAccountQuota = ${maq}"
-        add_finding_remediation "MEDIUM" "MachineAccountQuota Élevé" "Valeur: ${maq}. Tout utilisateur authentifié peut joindre ${maq} machines au domaine. Risque RBCD." \
-            "" \
+        add_finding_remediation "MEDIUM" "MachineAccountQuota Élevé" "Valeur: ${maq}. Tout utilisateur authentifié peut joindre ${maq} machines au domaine. Risque d'attaque RBCD (Resource-Based Constrained Delegation)." \
+            "${output_dir}/maq.txt" \
             "# Set MachineAccountQuota to 0\nSet-ADDomain -Identity '${DOMAIN}' -Replace @{'ms-DS-MachineAccountQuota'=0}"
     elif [ "${maq:-0}" -eq 0 ] 2>/dev/null; then
         print_success "MachineAccountQuota = 0"
@@ -32,10 +33,11 @@ audit_misc() {
 
     # Domain Functional Level
     print_test "Niveau fonctionnel du domaine"
+    ldap_search "${username}" "${pwd_file}" \
+        "(objectClass=domain)" "msDS-Behavior-Version" "${output_dir}/func_level.txt"
+    
     local func_level
-    func_level=$(ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
-        -b "${BASE_DN}" -s base "(objectClass=domain)" msDS-Behavior-Version 2>/dev/null | \
-        grep "msDS-Behavior-Version:" | awk '{print $2}')
+    func_level=$(grep -i "msDS-Behavior-Version:" "${output_dir}/func_level.txt" | awk '{print $2}' || echo "")
 
     local level_name="Inconnu"
     case "${func_level}" in
@@ -51,7 +53,7 @@ audit_misc() {
 
     if [ -n "${func_level}" ] && [ "${func_level}" -lt 7 ] 2>/dev/null; then
         print_warning "⚠️  Niveau fonctionnel: ${level_name} (${func_level})"
-        add_finding "MEDIUM" "Niveau Fonctionnel Ancien" "Niveau fonctionnel du domaine: ${level_name}. Recommandation: Windows 2016 (7) minimum." ""
+        add_finding "MEDIUM" "Niveau Fonctionnel Ancien" "Niveau fonctionnel du domaine: ${level_name}. Recommandation: Windows 2016 (7) minimum pour bénéficier des dernières protections de sécurité (ex: groupes Protected Users)." "${output_dir}/func_level.txt"
     elif [ "${func_level:-0}" -ge 7 ] 2>/dev/null; then
         print_success "Niveau fonctionnel: ${level_name} (${func_level})"
     else
@@ -60,18 +62,16 @@ audit_misc() {
 
     # AD Recycle Bin
     print_test "Corbeille AD (Recycle Bin)"
-    local recycle_bin
-    recycle_bin=$(ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" -y "${pwd_file}" \
-        -b "CN=Recycle Bin Feature,CN=Optional Features,CN=Directory Service,CN=Windows NT,CN=Services,CN=Configuration,${BASE_DN}" \
-        "(objectClass=*)" msDS-EnabledFeatureBL 2>/dev/null | \
-        grep "msDS-EnabledFeatureBL:" || true)
+    ldap_search "${username}" "${pwd_file}" \
+        "(objectClass=*)" "msDS-EnabledFeatureBL" "${output_dir}/recycle_bin.txt" \
+        "CN=Recycle Bin Feature,CN=Optional Features,CN=Directory Service,CN=Windows NT,CN=Services,CN=Configuration,${BASE_DN}"
 
-    if [ -n "${recycle_bin}" ]; then
+    if grep -qi "msDS-EnabledFeatureBL:" "${output_dir}/recycle_bin.txt" 2>/dev/null; then
         print_success "Corbeille AD activée"
     else
         print_warning "⚠️  Corbeille AD non activée"
-        add_finding_remediation "LOW" "Corbeille AD Désactivée" "La corbeille AD n'est pas activée. La récupération d'objets supprimés est limitée." \
-            "" \
+        add_finding_remediation "LOW" "Corbeille AD Désactivée" "La corbeille AD n'est pas activée. La récupération d'objets supprimés est limitée et complexe." \
+            "${output_dir}/recycle_bin.txt" \
             "# Enable AD Recycle Bin\nEnable-ADOptionalFeature -Identity 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target '${DOMAIN}'"
     fi
 

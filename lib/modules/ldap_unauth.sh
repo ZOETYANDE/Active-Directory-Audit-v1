@@ -12,17 +12,19 @@ audit_ldap_unauth() {
     print_test "Énumération LDAP anonyme"
     ldapsearch -x -H "${uri}" -b "${BASE_DN}" \
         "(objectclass=user)" sAMAccountName \
-        > "${output_dir}/ldap_anon.txt" 2>&1
+        > "${output_dir}/ldap_anon.txt" 2>&1 || true
 
     local user_count
     user_count=$(safe_count "sAMAccountName:" "${output_dir}/ldap_anon.txt")
 
     if [ "${user_count}" -gt 0 ]; then
         print_error "🔴 LDAP anonyme autorisé! ${user_count} comptes exposés"
-        add_finding "CRITICAL" "LDAP Anonyme Autorisé" "${user_count} comptes utilisateurs exposés via LDAP anonyme." "${output_dir}/ldap_anon.txt"
+        add_finding_remediation "CRITICAL" "LDAP Anonyme Autorisé" \
+            "Le serveur autorise l'énumération d'objets via LDAP anonyme. ${user_count} comptes ont pu être listés sans authentification." \
+            "${output_dir}/ldap_anon.txt" \
+            "# Disable anonymous LDAP search\n# See KB257288 and set 'dsHeuristics' seventh character to '0' or '2'"
     else
         print_success "LDAP anonyme restreint"
-        add_finding "INFO" "LDAP Anonyme Restreint" "L'accès LDAP anonyme est correctement restreint." ""
     fi
 
     stop_timer "ldap_unauth"

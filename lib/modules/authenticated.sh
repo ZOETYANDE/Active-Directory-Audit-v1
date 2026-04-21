@@ -32,8 +32,7 @@ audit_authenticated() {
     else
         local uri
         uri=$(get_ldap_uri)
-        if ldapsearch -x -H "${uri}" -D "${username}@${DOMAIN}" \
-            -y "${pwd_file}" -b "${BASE_DN}" "(objectClass=domain)" dn >/dev/null 2>&1; then
+        if ldap_search "${username}" "${pwd_file}" "(objectClass=domain)" "dn" "${OUTPUT_DIR}/auth_test_ldap.txt"; then
             print_success "Identifiants valides (LDAP)"
         else
             print_error "Identifiants invalides"
