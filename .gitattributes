@@ -1,0 +1,8 @@
+# Force Linux line endings for all shell scripts
+*.sh text eol=lf
+# Ensure other files are handled correctly
+*.md text
+*.conf text
+*.conf.example text
+*.html text
+*.json text
