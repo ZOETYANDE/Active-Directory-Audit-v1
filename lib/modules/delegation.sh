@@ -68,6 +68,7 @@ audit_acl_abuse() {
     local username="$1"
     local pwd_file="$2"
     local output_dir="${OUTPUT_DIR}/13_AclAbuse"
+    [ -d "${output_dir}" ] || mkdir -p "${output_dir}"
 
     print_section "AUDIT: ABUS DES ACL"
     start_timer "acl_abuse"
