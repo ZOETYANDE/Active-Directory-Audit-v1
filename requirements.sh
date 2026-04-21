@@ -1,6 +1,6 @@
 #!/bin/bash
 #===============================================================================
-# AD AUDIT FRAMEWORK — DEPENDENCY INSTALLER v2.0
+# AD AUDIT FRAMEWORK — DEPENDENCY INSTALLER v1.0
 #
 # Supports: Debian/Kali/Ubuntu, Arch, Fedora/RHEL
 # Usage: sudo ./requirements.sh [--check-only]
@@ -212,7 +212,7 @@ verify_tools() {
 
 echo ""
 echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   AD AUDIT FRAMEWORK — Dependency Installer v2.0            ║${NC}"
+echo -e "${CYAN}║   AD AUDIT FRAMEWORK — Dependency Installer v1.0            ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 

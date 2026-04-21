@@ -1,8 +1,8 @@
-# 🛡️ AD Audit Framework v2.0
+# 🛡️ AD Audit Framework v1.0
 
 Enterprise-grade Active Directory security assessment tool. Automates comprehensive AD auditing — from network discovery to CVE detection, BloodHound collection, ADCS analysis, and delegated permissions review — with professional HTML, JSON, and PowerShell remediation reporting.
 
-## 🆕 What's New in v2.0
+## 🚀 Key Features in v1.0
 
 - **5 new audit modules**: Shares, SMB Unauth, DNS, Vulnerabilities (CVEs), Hardening
 - **20+ new security checks**: PrintNightmare, PetitPotam, ZeroLogon, EternalBlue, noPac, MachineAccountQuota, passwords in descriptions, reversible encryption, DES-only Kerberos, Pre-Windows 2000 group, Protected Users, AD Recycle Bin, functional level, AdminCount orphans

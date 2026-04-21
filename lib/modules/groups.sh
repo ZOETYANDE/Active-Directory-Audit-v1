@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/groups.sh
 
 audit_groups() {
@@ -99,7 +99,7 @@ audit_groups() {
     else
         print_success "Aucun compte avec SPN"
     fi
-    # Pre-Windows 2000 Compatible Access [NEW v2.0]
+    # Pre-Windows 2000 Compatible Access
     print_test "Groupe Pre-Windows 2000 Compatible Access"
     ldap_search "${username}" "${pwd_file}" \
         "(&(objectClass=group)(cn=Pre-Windows 2000 Compatible Access))" \
@@ -120,7 +120,7 @@ audit_groups() {
         print_success "Pre-Windows 2000 vide ou restreint"
     fi
 
-    # Protected Users group [NEW v2.0]
+    # Protected Users group
     print_test "Groupe Protected Users"
     ldap_search "${username}" "${pwd_file}" \
         "(&(objectClass=group)(cn=Protected Users))" \

@@ -1,4 +1,4 @@
-# Active Directory Audit Configuration v2.0
+# Active Directory Audit Configuration v1.0
 # Usage: ./activeD_Audit.sh --config audit.conf -u <username>
 
 # ═══════════════════════════════════════════════════════
@@ -17,7 +17,7 @@ INACTIVITY_DAYS=90          # Days before a user is considered inactive
 ENCRYPT_OUTPUT=false        # GPG-encrypt the final archive
 
 # ═══════════════════════════════════════════════════════
-# MODULES (v2.0)
+# MODULES (v1.0)
 # ═══════════════════════════════════════════════════════
 # SELECTED_MODULES=         # Comma-separated list of modules to run (empty = all)
 # SKIP_MODULES=             # Comma-separated list of modules to skip

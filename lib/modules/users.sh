@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # lib/modules/users.sh
 
 audit_users() {
@@ -68,7 +68,7 @@ audit_users() {
     else
         print_warning "Aucun compte désactivé trouvé"
     fi
-    # Passwords in description field [NEW v2.0]
+    # Passwords in description field
     print_test "Mots de passe dans les descriptions"
     ldap_search "${username}" "${pwd_file}" \
         "(&(objectCategory=person)(objectClass=user)(|(description=*pass*)(description=*pwd*)(description=*mot de passe*)(info=*pass*)(info=*pwd*)))" \
@@ -86,7 +86,7 @@ audit_users() {
         print_success "Aucun mot de passe dans les descriptions"
     fi
 
-    # Reversible encryption [NEW v2.0]
+    # Reversible encryption
     print_test "Chiffrement réversible"
     ldap_search "${username}" "${pwd_file}" \
         "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=128))" \
@@ -104,7 +104,7 @@ audit_users() {
         print_success "Aucun chiffrement réversible"
     fi
 
-    # DES-only Kerberos [NEW v2.0]
+    # DES-only Kerberos
     print_test "Kerberos DES uniquement"
     ldap_search "${username}" "${pwd_file}" \
         "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=2097152))" \
@@ -121,7 +121,7 @@ audit_users() {
         print_success "Aucun compte DES-only"
     fi
 
-    # Recently created accounts (30 days) [NEW v2.0]
+    # Recently created accounts (30 days)
     print_test "Comptes créés récemment (30 jours)"
     local thirty_days_ago
     thirty_days_ago=$(date -d "30 days ago" "+%Y%m%d000000.0Z" 2>/dev/null || date -v-30d "+%Y%m%d000000.0Z" 2>/dev/null || echo "")

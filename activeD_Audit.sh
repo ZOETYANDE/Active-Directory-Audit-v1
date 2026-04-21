@@ -2,7 +2,7 @@
 
 #===============================================================================
 #
-# ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v2.0
+# ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v1.0
 #
 # Enterprise-grade AD security assessment tool
 # Supports: Dynamic config, NetExec, LDAPS, BloodHound, ADCS, GPO, LAPS
@@ -17,7 +17,7 @@ set -u
 #===============================================================================
 # CONFIGURATION DEFAULTS (overridden by CLI args or config file)
 #===============================================================================
-readonly SCRIPT_VERSION="2.0"
+readonly SCRIPT_VERSION="1.0"
 readonly AUDIT_REF="Audit - Sécurité Active Directory"
 
 # Resolve lib directory relative to script location
@@ -254,7 +254,7 @@ main() {
     echo -e "${CYAN}"
     cat <<'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v2.0            ║
+║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v1.0            ║
 ║     Enterprise AD Security Assessment Framework              ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
