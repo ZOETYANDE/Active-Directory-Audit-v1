@@ -17,7 +17,7 @@ audit_authenticated() {
     if [ -f "${OUTPUT_DIR}/cred_test.txt" ] && grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null; then
         print_success "Identifiants valides"
     elif [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
-        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\"" \
+        smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
             > "${OUTPUT_DIR}/cred_test.txt" 2>&1
 
         if grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt"; then

@@ -31,7 +31,7 @@ audit_acl_abuse() {
     if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
         local password
         password=$(<"${pwd_file}")
-        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" --users" \
+        smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" --users \
             > "${output_dir}/users_enum.txt" 2>&1 || true
         # Redact password from users_enum output
         sed -i "s/${password}/[REDACTED]/g" "${output_dir}/users_enum.txt" 2>/dev/null || true

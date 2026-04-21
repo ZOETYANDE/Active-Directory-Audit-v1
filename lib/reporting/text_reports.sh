@@ -58,8 +58,14 @@ EOF
 
     local levels=("INFO" "TEST" "SUCCESS" "WARNING" "ERROR" "CMD" "PERF" "PARALLEL" "FINDING")
     for level in "${levels[@]}"; do
-        local count
-        count=$(grep -c "\[${level}\]" "${LOG_FILE}" 2>/dev/null || echo "0")
+        local count=0
+        if [ -f "${LOG_FILE}" ]; then
+            count=$(grep -c "\[${level}\]" "${LOG_FILE}" 2>/dev/null || echo "0")
+        fi
+        
+        # Force numeric context for count
+        if ! [[ "${count}" =~ ^[0-9]+$ ]]; then count=0; fi
+        
         printf "%-15s : %d\n" "${level}" "${count}" >> "${LOG_SUMMARY_FILE}"
     done
 

@@ -15,7 +15,7 @@ audit_shares() {
     # Share enumeration
     print_test "Énumération des partages"
     if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
-        smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\" --shares" \
+        smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" --shares \
             > "${output_dir}/shares.txt" 2>&1 || true
         sed -i "s/${password}/[REDACTED]/g" "${output_dir}/shares.txt" 2>/dev/null || true
 

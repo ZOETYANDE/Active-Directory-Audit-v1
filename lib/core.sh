@@ -370,11 +370,10 @@ ldap_search() {
 }
 
 smb_tool_exec() {
-    local args="$*"
     if [ "${HAS_NXC}" = true ]; then
-        nxc smb ${args}
+        nxc smb "$@"
     elif [ "${HAS_CME}" = true ]; then
-        crackmapexec smb ${args}
+        crackmapexec smb "$@"
     else
         log "WARNING" "No SMB tool available (nxc/crackmapexec)"
         return 1
