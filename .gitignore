@@ -1,0 +1,24 @@
+# Configuration files
+audit.conf
+.env
+.secure_password
+
+# Reports and Output
+*_Audit_*
+findings.json
+RAPPORT_AUDIT_AD.html
+RAPPORT_AUDIT_AD.txt
+00_RESUME_SECURITE.txt
+log_summary.txt
+REMEDIATION.ps1
+*.ps1
+audit_execution.log
+
+# Temporary and log files
+*.log
+*.tmp
+temp_*
+
+# OS files
+.DS_Store
+Thumbs.db
