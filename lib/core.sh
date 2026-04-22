@@ -53,14 +53,13 @@ log_debug() {
 log_command() {
     local description="$1"
     shift
-    local cmd="$*"
-
+    # Utilise "$@" au lieu de eval pour éviter les injections de commandes
     log "CMD" "${description}"
-    log_debug "Commande exacte: ${cmd}"
+    log_debug "Commande: $*"
 
     local start_time
     start_time=$(date +%s)
-    eval "$cmd"
+    "$@"
     local exit_code=$?
     local end_time
     end_time=$(date +%s)
@@ -332,6 +331,19 @@ safe_divide() {
     echo "$((numerator * 100 / denominator))"
 }
 
+#===============================================================================
+# THROTTLING (rate-limiting des requêtes réseau)
+#===============================================================================
+
+# Délai inter-requêtes en secondes (0 = désactivé, configurable via LDAP_DELAY)
+LDAP_DELAY="${LDAP_DELAY:-0}"
+
+throttle_request() {
+    if [ "${LDAP_DELAY}" -gt 0 ] 2>/dev/null; then
+        sleep "${LDAP_DELAY}"
+    fi
+}
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
@@ -355,13 +367,16 @@ ldap_search() {
     local filter="$3"
     local attrs="$4"
     local output_file="$5"
+    local search_base="${6:-${BASE_DN}}"  # Base de recherche personnalisable (optionnel)
 
     local uri
     uri=$(get_ldap_uri)
 
+    throttle_request
+
     ldapsearch -x -H "${uri}" \
         -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
-        -b "${BASE_DN}" \
+        -b "${search_base}" \
         -E pr=1000/noprompt \
         "${filter}" ${attrs} \
         > "${output_file}" 2>&1 || true

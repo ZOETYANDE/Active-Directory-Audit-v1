@@ -95,7 +95,28 @@ audit_groups() {
 
     if [ "${spn_count}" -gt 0 ]; then
         print_warning "⚠️  ${spn_count} comptes avec SPN"
-        add_finding "HIGH" "Kerberoasting" "${spn_count} comptes utilisateurs avec SPN — vulnérables au Kerberoasting." "${output_dir}/users_spn.txt"
+        add_finding "HIGH" "Kerberoasting" \
+            "${spn_count} comptes utilisateurs avec SPN — vulnérables au Kerberoasting (attaque hors-ligne du hash TGS). Réf: CIS AD Benchmark 2.2 / ISO 27001 A.9.2.3." \
+            "${output_dir}/users_spn.txt"
+
+        # Croisement SPN × Domain Admins (risque critique)
+        local priv_spn_count=0
+        if [ -f "${output_dir}/users_spn.txt" ] && [ -f "${output_dir}/group_Domain_Admins.txt" ]; then
+            while IFS= read -r sam; do
+                [ -z "${sam}" ] && continue
+                if grep -qi "${sam}" "${output_dir}/group_Domain_Admins.txt" 2>/dev/null; then
+                    print_error "🔴 Compte SPN privilégié: ${sam} est Domain Admin!"
+                    add_finding "CRITICAL" "Compte Service Kerberoastable + Domain Admin" \
+                        "${sam} a un SPN (Kerberoastable) ET est membre de Domain Admins. Un attaquant peut casser le hash hors-ligne et obtenir les droits Domain Admin. Réf: CIS AD § 2.2 / ISO 27001 A.9.2.3." \
+                        "${output_dir}/users_spn.txt"
+                    ((priv_spn_count++)) || true
+                fi
+            done < <(grep -i "^sAMAccountName:" "${output_dir}/users_spn.txt" 2>/dev/null | awk '{print $2}')
+        fi
+
+        if [ "${priv_spn_count}" -eq 0 ]; then
+            print_success "Aucun compte SPN n'est Domain Admin (bien)"
+        fi
     else
         print_success "Aucun compte avec SPN"
     fi

@@ -9,9 +9,6 @@ audit_misc() {
     print_section "AUDIT: DURCISSEMENT GÉNÉRAL"
     start_timer "misc"
 
-    local uri
-    uri=$(get_ldap_uri)
-
     # MachineAccountQuota
     print_test "MachineAccountQuota"
     ldap_search "${username}" "${pwd_file}" \

@@ -77,6 +77,9 @@ load_config() {
             LDAPS)            LDAPS_MODE="${value}" ;;
             INACTIVITY_DAYS)  INACTIVITY_DAYS="${value}" ;;
             ENCRYPT_OUTPUT)   ENCRYPT_OUTPUT="${value}" ;;
+            LDAP_DELAY)       LDAP_DELAY="${value}" ;;
+            SAFE_MODE)        SAFE_MODE="${value}" ;;
+            ALLOWED_HOURS)    ALLOWED_HOURS="${value}" ;;
         esac
     done < "${config}"
 
@@ -91,7 +94,7 @@ check_requirements() {
     print_section "VÉRIFICATION DES PRÉREQUIS"
 
     local critical_tools=("nmap" "ldapsearch")
-    local optional_tools_list=("nxc:NetExec" "crackmapexec:CrackMapExec" "enum4linux-ng:Enum4Linux-NG" "bloodhound-python:BloodHound" "certipy:Certipy-AD" "gpg:GPG" "smbclient:SMBClient" "rpcdump.py:RPCDump" "dig:DNS-Dig")
+    local optional_tools_list=("nxc:NetExec" "crackmapexec:CrackMapExec" "enum4linux-ng:Enum4Linux-NG" "bloodhound-python:BloodHound" "certipy:Certipy-AD" "gpg:GPG" "smbclient:SMBClient" "rpcdump.py:RPCDump" "dig:DNS-Dig" "dacledit.py:DACLEdit-Impacket")
 
     print_info "Vérification des outils critiques..."
     for tool in "${critical_tools[@]}"; do
@@ -122,6 +125,7 @@ check_requirements() {
                 smbclient)          HAS_SMBCLIENT=true ;;
                 rpcdump.py)         HAS_RPCDUMP=true ;;
                 dig)                HAS_DIG=true ;;
+                dacledit.py)        HAS_DACLEDIT=true ;;
             esac
         else
             print_info "○ ${name}: Non disponible (optionnel)"

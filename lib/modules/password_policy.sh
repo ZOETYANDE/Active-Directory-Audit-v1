@@ -9,9 +9,6 @@ audit_password_policy() {
     print_section "AUDIT: POLITIQUE DE MOTS DE PASSE"
     start_timer "password_policy"
 
-    local uri
-    uri=$(get_ldap_uri)
-
     # Default Domain Policy
     print_test "Politique de mot de passe par défaut"
     ldap_search "${username}" "${pwd_file}" \
@@ -20,27 +17,47 @@ audit_password_policy() {
         "${output_dir}/default_policy.txt"
 
     if [ -s "${output_dir}/default_policy.txt" ]; then
-        local min_len
+        local min_len lockout history lockout_dur
         min_len=$(grep -i "minPwdLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
-        local lockout
         lockout=$(grep -i "lockoutThreshold:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
-        local history
         history=$(grep -i "pwdHistoryLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
+        lockout_dur=$(grep -i "lockoutDuration:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
 
-        print_info "📊 Longueur min: ${min_len:-N/A} | Verrouillage: ${lockout:-N/A} | Historique: ${history:-N/A}"
+        print_info "📊 Longueur min: ${min_len:-N/A} | Verrouillage: ${lockout:-N/A} tentatives | Historique: ${history:-N/A} | Durée lockout: ${lockout_dur:-N/A}"
 
+        # Longueur minimale (CIS AD Benchmark 1.1.1: >= 14 recommandé)
         if [ -n "${min_len}" ] && [ "${min_len}" -lt 12 ] 2>/dev/null; then
             print_warning "Longueur minimale < 12 caractères (${min_len})"
-            add_finding "HIGH" "Mot de Passe Trop Court" "La longueur minimale est de ${min_len} caractères. Recommandation: ≥12." "${output_dir}/default_policy.txt"
+            add_finding "HIGH" "Mot de Passe Trop Court" \
+                "Longueur minimale: ${min_len} caractères. Référence: CIS AD Benchmark 1.1.1 (min 14), ISO 27001 A.9.4.3. Recommandation: ≥14 caractères." \
+                "${output_dir}/default_policy.txt"
         elif [ -n "${min_len}" ]; then
             print_success "Longueur minimale acceptable: ${min_len}"
         fi
 
+        # Seuil de verrouillage (CIS AD Benchmark 1.2.1: 1-10 tentatives)
         if [ -n "${lockout}" ] && [ "${lockout}" -eq 0 ] 2>/dev/null; then
-            print_warning "Aucun verrouillage de compte configuré!"
-            add_finding "HIGH" "Pas de Verrouillage" "Aucun seuil de verrouillage de compte. Brute-force possible." "${output_dir}/default_policy.txt"
+            print_error "🔴 Aucun verrouillage de compte configuré!"
+            add_finding_remediation "CRITICAL" "Pas de Verrouillage de Compte" \
+                "lockoutThreshold=0 : aucun verrouillage. Brute-force et Password Spray illimités. Réf: CIS AD Benchmark 1.2.1 / ISO 27001 A.9.4.3." \
+                "${output_dir}/default_policy.txt" \
+                "# Set account lockout threshold to 10\nSet-ADDefaultDomainPasswordPolicy -LockoutThreshold 10 -LockoutDuration '00:30:00' -LockoutObservationWindow '00:30:00'"
+        elif [ -n "${lockout}" ] && [ "${lockout}" -gt 10 ] 2>/dev/null; then
+            print_warning "⚠️  Seuil de verrouillage élevé: ${lockout} tentatives (vulnérable au spray)"
+            add_finding "MEDIUM" "Seuil Verrouillage Trop Permissif" \
+                "lockoutThreshold=${lockout} est supérieur à 10. Password spray possible avec ${lockout} tentatives par compte. Réf: CIS AD Benchmark 1.2.1." \
+                "${output_dir}/default_policy.txt"
         elif [ -n "${lockout}" ]; then
-            print_success "Verrouillage après ${lockout} tentatives"
+            print_success "Verrouillage après ${lockout} tentatives (correct)"
+        fi
+
+        # Durée de verrouillage (CIS: >= 15 min)
+        if [ -n "${lockout_dur}" ] && [ "${lockout_dur}" != "0" ] && [ "${lockout_dur}" -lt 900 ] 2>/dev/null; then
+            local dur_min=$(( lockout_dur / 60 ))
+            print_warning "⚠️  Durée de verrouillage courte: ${dur_min} min"
+            add_finding "LOW" "Durée Verrouillage Insuffisante" \
+                "Durée de verrouillage: ${dur_min} min. Réf: CIS AD Benchmark 1.2.2 recommande ≥15 min." \
+                "${output_dir}/default_policy.txt"
         fi
     else
         print_warning "Impossible de lire la politique"

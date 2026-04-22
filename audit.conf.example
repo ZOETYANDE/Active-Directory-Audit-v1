@@ -17,6 +17,30 @@ INACTIVITY_DAYS=90          # Days before a user is considered inactive
 ENCRYPT_OUTPUT=false        # GPG-encrypt the final archive
 
 # ═══════════════════════════════════════════════════════
+# SECURITE OPERATIONNELLE
+# ═══════════════════════════════════════════════════════
+
+# Délai entre chaque requête LDAP (secondes)
+#   0 = aucun délai (défaut, rapide)
+#   1 = prudent (recommandé sur production)
+#   2 = très conservateur (infrastructure sensible)
+LDAP_DELAY=0
+
+# Mode safe: active nmap T2, BloodHound partiel, LDAP_DELAY=1 automatiquement
+#   true  = mode production (moins intrusif)
+#   false = mode audit complet (défaut)
+SAFE_MODE=false
+
+# Fenêtre horaire autorisée (heures, format 24h)
+# Laisser vide pour aucune restriction.
+# Utiliser --force pour bypasser si hors fenêtre.
+# Exemples:
+#   ALLOWED_HOURS=18-23        (seulement après 18h)
+#   ALLOWED_HOURS=22-6         (nuit: 22h à 6h du matin)
+#   ALLOWED_HOURS=18-23,0-6    (soirée + nuit)
+ALLOWED_HOURS=
+
+# ═══════════════════════════════════════════════════════
 # MODULES (v1.0)
 # ═══════════════════════════════════════════════════════
 # SELECTED_MODULES=         # Comma-separated list of modules to run (empty = all)
@@ -31,3 +55,5 @@ ENCRYPT_OUTPUT=false        # GPG-encrypt the final archive
 # Examples:
 #   SELECTED_MODULES=users,groups,password,bloodhound
 #   SKIP_MODULES=bloodhound,adcs
+#   SKIP_MODULES=vulns,bloodhound    # Recommandé en mode safe sur production
+

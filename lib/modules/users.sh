@@ -115,10 +115,33 @@ audit_users() {
 
     if [ "${des_only}" -gt 0 ]; then
         print_warning "⚠️  ${des_only} comptes avec Kerberos DES uniquement"
-        add_finding "HIGH" "Kerberos DES Uniquement" "${des_only} comptes utilisent le chiffrement DES, considéré comme cassé." \
+        add_finding "HIGH" "Kerberos DES Uniquement" \
+            "${des_only} comptes utilisent le chiffrement DES, considéré comme cassé. Réf: CIS AD Benchmark 2.3 / ISO 27001 A.10.1.1." \
             "${output_dir}/users_des_only.txt"
     else
         print_success "Aucun compte DES-only"
+    fi
+
+    # Comptes Domain Admin sans SmartCard requis
+    # Réf: CIS AD Benchmark 2.1 — Privileged accounts should require smart card
+    # ISO 27001 A.9.4.2 — Secure log-on procedures
+    print_test "Comptes Domain Admin sans SmartCard requis"
+    ldap_search "${username}" "${pwd_file}" \
+        "(&(objectCategory=person)(objectClass=user)(memberOf=CN=Domain Admins,CN=Users,${BASE_DN})(!(userAccountControl:1.2.840.113556.1.4.803:=262144)))" \
+        "sAMAccountName userAccountControl" \
+        "${output_dir}/admins_no_smartcard.txt"
+
+    local no_sc_count
+    no_sc_count=$(safe_count "sAMAccountName:" "${output_dir}/admins_no_smartcard.txt")
+
+    if [ "${no_sc_count}" -gt 0 ]; then
+        print_warning "⚠️  ${no_sc_count} Domain Admins sans SmartCard requis"
+        add_finding_remediation "MEDIUM" "Domain Admins Sans SmartCard" \
+            "${no_sc_count} comptes Domain Admin ne requièrent pas de SmartCard pour l'authentification. Vulnérables au vol de mot de passe. Réf: CIS AD Benchmark 2.1 / ISO 27001 A.9.4.2." \
+            "${output_dir}/admins_no_smartcard.txt" \
+            "# Require SmartCard for all Domain Admin accounts\nGet-ADGroupMember 'Domain Admins' | ForEach-Object {\n  Set-ADUser \$_ -SmartcardLogonRequired \$true\n}"
+    else
+        print_success "Tous les Domain Admins requièrent un SmartCard"
     fi
 
     # Recently created accounts (30 days)

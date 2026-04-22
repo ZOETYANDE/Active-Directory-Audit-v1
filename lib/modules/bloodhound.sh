@@ -40,19 +40,16 @@ audit_bloodhound() {
     domain_lower=$(echo "${DOMAIN}" | tr '[:upper:]' '[:lower:]')
 
     if [ -n "${DC_HOSTNAME}" ]; then
-        # Strip any existing domain suffix to avoid double-domain (e.g. HOST.domain.domain)
         local hostname_base="${DC_HOSTNAME%%.*}"
         dc_fqdn="${hostname_base}.${domain_lower}"
         print_info "✓ FQDN configuré: ${dc_fqdn}"
     else
-        # Try reverse DNS
         local ptr_result
         ptr_result=$(host "${DC_IP}" 2>/dev/null | grep -i "pointer" | awk '{print $NF}' | sed 's/\.$//')
         if [ -n "${ptr_result}" ]; then
             dc_fqdn="${ptr_result}"
             print_info "✓ FQDN via DNS inverse: ${dc_fqdn}"
         else
-            # Try LDAP
             ldap_search "${username}" "${pwd_file}" \
                 "(objectClass=computer)" "dNSHostName" "${output_dir}/dc_fqdn_ldap.txt"
             local ldap_hostname
@@ -62,7 +59,6 @@ audit_bloodhound() {
                 dc_fqdn="${ldap_hostname}"
                 print_info "✓ FQDN via LDAP: ${dc_fqdn}"
             else
-                # Try SRV
                 local srv_result
                 srv_result=$(host -t SRV "_ldap._tcp.${domain_lower}" "${DC_IP}" 2>/dev/null | \
                     grep -i "SRV" | head -1 | awk '{print $NF}' | sed 's/\.$//')
@@ -94,6 +90,15 @@ audit_bloodhound() {
     fi
     print_success "Mot de passe chargé (${#password} caractères)"
 
+    # En SAFE_MODE: collecte partielle + throttle pour limiter l'impact réseau
+    local BH_COLLECTION="All"
+    local BH_THROTTLE=""
+    if [ "${SAFE_MODE}" = true ]; then
+        BH_COLLECTION="Group,User,Session"
+        BH_THROTTLE="--throttle 2"
+        print_warning "🛡️  SAFE_MODE: collecte partielle (${BH_COLLECTION}) + throttle 2s"
+    fi
+
     # Execute BloodHound
     print_info "🚀 Lancement de la collecte BloodHound..."
     print_info "   Domaine: ${domain_lower} | DC: ${dc_fqdn} | DNS: ${DC_IP}"
@@ -105,18 +110,20 @@ audit_bloodhound() {
     print_test "Collecte BloodHound"
     echo ""
     echo -e "${YELLOW}┌─────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${YELLOW}│ EXÉCUTION BLOODHOUND — bloodhound-python -c All            │${NC}"
+    echo -e "${YELLOW}│ EXÉCUTION BLOODHOUND — -c ${BH_COLLECTION}${NC}"
     echo -e "${YELLOW}│ DC: ${dc_fqdn}${NC}"
     echo -e "${YELLOW}└─────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
+    # shellcheck disable=SC2086
     bloodhound-python \
-        -c All \
+        -c "${BH_COLLECTION}" \
         -d "${domain_lower}" \
         -u "${username}" \
         -p "${password}" \
         -dc "${dc_fqdn}" \
         -ns "${DC_IP}" \
+        ${BH_THROTTLE} \
         --zip 2>&1 | tee bloodhound_output.log
 
     local exit_code=${PIPESTATUS[0]}
@@ -125,11 +132,12 @@ audit_bloodhound() {
     json_count=$(find . -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l)
     zip_count=$(find . -maxdepth 1 -name "*.zip" -type f 2>/dev/null | wc -l)
 
-    # Retry without --zip if needed
+    # Retry sans --zip si besoin
     if [ ${zip_count} -eq 0 ] && [ ${json_count} -eq 0 ] && [ ${exit_code} -ne 0 ]; then
         print_warning "Retry sans --zip..."
-        bloodhound-python -c All -d "${domain_lower}" -u "${username}" \
-            -p "${password}" -dc "${dc_fqdn}" -ns "${DC_IP}" 2>&1 | tee -a bloodhound_output.log
+        # shellcheck disable=SC2086
+        bloodhound-python -c "${BH_COLLECTION}" -d "${domain_lower}" -u "${username}" \
+            -p "${password}" -dc "${dc_fqdn}" -ns "${DC_IP}" ${BH_THROTTLE} 2>&1 | tee -a bloodhound_output.log
         json_count=$(find . -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l)
         zip_count=$(find . -maxdepth 1 -name "*.zip" -type f 2>/dev/null | wc -l)
     fi
@@ -138,7 +146,7 @@ audit_bloodhound() {
 
     if [ ${json_count} -gt 0 ] || [ ${zip_count} -gt 0 ]; then
         print_success "✅ ${json_count} JSON + ${zip_count} ZIP créés"
-        add_finding "INFO" "BloodHound Collecté" "${json_count} fichiers JSON et ${zip_count} archives ZIP générés." "${output_dir}"
+        add_finding "INFO" "BloodHound Collecté" "${json_count} fichiers JSON et ${zip_count} archives ZIP générés (collection: ${BH_COLLECTION})." "${output_dir}"
 
         print_info "📁 Fichiers générés:"
         find "${output_dir}" -maxdepth 1 \( -name "*.json" -o -name "*.zip" \) -type f 2>/dev/null | while read -r file; do

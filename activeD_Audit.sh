@@ -78,6 +78,10 @@ declare -A PERF_TIMERS
 # Modes
 DEBUG_MODE=false
 VERBOSE_MODE=false
+SAFE_MODE=false       # Mode production: nmap T2, BH partiel, LDAP_DELAY=1
+NO_CONFIRM=false      # Bypass le banner de consentement
+FORCE_RUN=false       # Forcer l'exécution hors fenêtre horaire
+ALLOWED_HOURS=""      # Ex: "18-23" = seulement après 18h (vide = pas de restriction)
 
 # Tool detection cache
 HAS_NXC=false
@@ -88,6 +92,7 @@ HAS_CERTIPY=false
 HAS_SMBCLIENT=false
 HAS_RPCDUMP=false
 HAS_DIG=false
+HAS_DACLEDIT=false
 
 # Module selector
 SELECTED_MODULES=""
@@ -157,6 +162,11 @@ OPTIONS:
   --encrypt                 GPG encrypt final archive
   --inactivity-days <N>     Inactive threshold (default: 90)
 
+SECURITE OPERATIONNELLE:
+  --safe                    Mode production (nmap T2, BloodHound partiel, LDAP_DELAY=1)
+  --no-confirm              Bypass le banner de consentement (mode CI/auto)
+  --force                   Forcer l'execution hors fenetre horaire autorisee
+
 DEBUG:
   --debug                   Debug mode (detailed logs)
   --verbose                 Verbose output
@@ -170,7 +180,53 @@ EXAMPLES:
   $0 -t [IP_ADDRESS] --debug -u admin    # auto-detect domain
   $0 -t 10.0.0.1 -d CORP.LOCAL -u admin --modules users,groups,bloodhound
   $0 -t 10.0.0.1 -d CORP.LOCAL -u admin --skip bloodhound,adcs
+  $0 -t 10.0.0.1 -d CORP.LOCAL -u admin --safe              # mode production
+  $0 -t 10.0.0.1 -d CORP.LOCAL -u admin --safe --no-confirm # sans confirmation
 EOF
+}
+
+#===============================================================================
+# GARDE TEMPORELLE (fenetre horaire)
+#===============================================================================
+
+check_time_window() {
+    [ -z "${ALLOWED_HOURS}" ] && return 0
+
+    local current_hour
+    current_hour=$(date +%-H 2>/dev/null || date +%H | sed 's/^0//')
+    current_hour=${current_hour:-0}
+
+    local in_window=false
+    IFS=',' read -ra ranges <<< "${ALLOWED_HOURS}"
+    for range in "${ranges[@]}"; do
+        local start_h end_h
+        start_h=$(echo "${range}" | cut -d'-' -f1)
+        end_h=$(echo "${range}" | cut -d'-' -f2)
+        if [ "${start_h}" -le "${end_h}" ]; then
+            [ "${current_hour}" -ge "${start_h}" ] && \
+            [ "${current_hour}" -le "${end_h}" ] && in_window=true
+        else
+            # Passage minuit (ex: 22-6)
+            { [ "${current_hour}" -ge "${start_h}" ] || \
+              [ "${current_hour}" -le "${end_h}" ]; } && in_window=true
+        fi
+    done
+
+    if [ "${in_window}" = false ]; then
+        echo -e "${YELLOW}"
+        echo "  [!] AVERTISSEMENT: HORS DE LA FENETRE HORAIRE AUTORISEE"
+        echo "  Heure actuelle    : $(date '+%H:%M')"
+        echo "  Fenetre autorisee : ${ALLOWED_HOURS}"
+        echo -e "${NC}"
+        if [ "${FORCE_RUN}" = true ]; then
+            echo -e "${YELLOW}[!] Lancement force via --force${NC}"
+            log "WARNING" "Execution hors fenetre horaire (--force active)"
+        else
+            echo -e "${RED}[!] Utilisez --force pour lancer hors de la fenetre autorisee.${NC}"
+            exit 1
+        fi
+    fi
+    return 0
 }
 
 main() {
@@ -223,6 +279,15 @@ main() {
                 ;;
             --verbose)
                 VERBOSE_MODE=true; shift
+                ;;
+            --safe)
+                SAFE_MODE=true; shift
+                ;;
+            --no-confirm)
+                NO_CONFIRM=true; shift
+                ;;
+            --force)
+                FORCE_RUN=true; shift
                 ;;
             --modules)
                 SELECTED_MODULES="$2"; shift 2
@@ -298,6 +363,39 @@ EOF
     # Print config summary
     print_info "🎯 Cible: ${DC_IP} | Domaine: ${DOMAIN} | Réseau: ${NETWORK}"
     print_info "📂 Sortie: ${OUTPUT_DIR} | LDAPS: ${LDAPS_MODE}"
+    [ "${SAFE_MODE}" = true ] && print_warning "🛡️  MODE SAFE activé (nmap T2, BloodHound partiel, LDAP_DELAY=1)"
+
+    # Fenêtre horaire
+    check_time_window
+
+    # Banner de consentement éthique
+    if [ "${NO_CONFIRM}" = false ]; then
+        echo ""
+        echo -e "${RED}╔═══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  AVERTISSEMENT — AUDIT OFFENSIF                              ║${NC}"
+        echo -e "${RED}║  Cet outil effectue des tests actifs sur l'infrastructure.   ║${NC}"
+        echo -e "${RED}║  Cible   : ${DC_IP} | Domaine: ${DOMAIN}                     ║${NC}"
+        echo -e "${RED}╚═══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${YELLOW}  Vous confirmez disposer d'une AUTORISATION ÉCRITE pour auditer cette cible.${NC}"
+        echo ""
+        local _confirm
+        read -r -p "  Confirmez-vous? [oui/NON] : " _confirm
+        if [[ "${_confirm}" != "oui" ]]; then
+            echo -e "${RED}[!] Audit annulé — aucune confirmation.${NC}"
+            exit 1
+        fi
+        echo ""
+        log "INFO" "Consentement confirmé par l'opérateur"
+    else
+        log "INFO" "Consentement bypassé via --no-confirm"
+    fi
+
+    # Appliquer SAFE_MODE
+    if [ "${SAFE_MODE}" = true ]; then
+        [ "${LDAP_DELAY}" -eq 0 ] 2>/dev/null && LDAP_DELAY=1
+        log "INFO" "SAFE_MODE activé: LDAP_DELAY=${LDAP_DELAY}, nmap T2, BloodHound -c Group,User"
+    fi
 
     # Requirements
     if ! check_requirements; then

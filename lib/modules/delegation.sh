@@ -60,36 +60,4 @@ audit_delegation() {
     stop_timer "delegation"
 }
 
-#===============================================================================
-# AUDIT 4.8: ACL ABUSE  [NEW]
-#===============================================================================
 
-audit_acl_abuse() {
-    local username="$1"
-    local pwd_file="$2"
-    local output_dir="${OUTPUT_DIR}/13_AclAbuse"
-    [ -d "${output_dir}" ] || mkdir -p "${output_dir}"
-
-    print_section "AUDIT: ABUS DES ACL"
-    start_timer "acl_abuse"
-
-    # Check for genericWrite/GenericAll on sensitive objects
-    print_test "Recherche d'abus de permissions (GenericWrite/GenericAll)"
-    ldap_search "${username}" "${pwd_file}" "(objectClass=*)" "distinguishedName" "${output_dir}/acls.txt"
-
-    # Parse ACLs for abuse patterns
-    local abuse_found=0
-    while IFS= read -r line; do
-        if [[ "${line}" == *"GenericWrite"* || "${line}" == *"GenericAll"* ]]; then
-            abuse_found=1
-            print_error "🔴 Abus de permissions détecté: ${line}"
-            add_finding "HIGH" "Abus de Permissions" "Objet avec permissions GenericWrite/GenericAll. Risque de prise de contrôle." "${output_dir}/acls.txt"
-        fi
-    done < "${output_dir}/acls.txt"
-
-    if [ "${abuse_found}" -eq 0 ]; then
-        print_success "Aucun abus de permissions détecté"
-    fi
-
-    stop_timer "acl_abuse"
-}

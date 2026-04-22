@@ -6,9 +6,12 @@ audit_inventory() {
     local output_dir="${OUTPUT_DIR}/01_Inventaire"
     start_timer "inventory"
 
-    print_info "Lancement de 4 scans nmap en parallèle..."
+    # Timing nmap: T2 en mode safe (production), T4 sinon
+    local NMAP_T="T4"
+    [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
+    print_info "Lancement de 4 scans nmap en parallèle (timing: -${NMAP_T})..."
 
-    nmap -T4 -sn "${NETWORK}" \
+    nmap -${NMAP_T} -sn "${NETWORK}" \
         -oN "${output_dir}/hosts_alive.txt" \
         -oX "${output_dir}/hosts_alive.xml" \
         >/dev/null 2>&1 &
@@ -16,7 +19,7 @@ audit_inventory() {
     BG_PIDS+=("${pid1}")
     log_parallel "${pid1}" "discovery" "LANCÉ"
 
-    nmap -T4 -Pn -p 88,389,445,636,3268 "${NETWORK}" --open \
+    nmap -${NMAP_T} -Pn -p 88,389,445,636,3268 "${NETWORK}" --open \
         -oN "${output_dir}/ad_services.txt" \
         -oX "${output_dir}/ad_services.xml" \
         >/dev/null 2>&1 &
@@ -24,7 +27,7 @@ audit_inventory() {
     BG_PIDS+=("${pid2}")
     log_parallel "${pid2}" "services AD" "LANCÉ"
 
-    nmap -T4 -Pn -sV -sC -p 53,88,135,139,389,445,464,636,3268,3269,3389 "${DC_IP}" \
+    nmap -${NMAP_T} -Pn -sV -sC -p 53,88,135,139,389,445,464,636,3268,3269,3389 "${DC_IP}" \
         -oN "${output_dir}/dc_full_scan.txt" \
         -oX "${output_dir}/dc_full_scan.xml" \
         >/dev/null 2>&1 &
@@ -32,7 +35,7 @@ audit_inventory() {
     BG_PIDS+=("${pid3}")
     log_parallel "${pid3}" "DC complet" "LANCÉ"
 
-    nmap -T4 -Pn -p 445 --script smb-protocols,smb2-protocols "${DC_IP}" \
+    nmap -${NMAP_T} -Pn -p 445 --script smb-protocols,smb2-protocols "${DC_IP}" \
         -oN "${output_dir}/smb_version.txt" \
         >/dev/null 2>&1 &
     local pid4=$!

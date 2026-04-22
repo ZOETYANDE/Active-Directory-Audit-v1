@@ -3,7 +3,7 @@
 
 audit_ldap_unauth() {
     print_section "AUDIT 3: LDAP NON AUTHENTIFIÉ"
-    local output_dir="${OUTPUT_DIR}/03_Comptes_Utilisateurs"
+    local output_dir="${OUTPUT_DIR}/02_Configuration_DC"
     start_timer "ldap_unauth"
 
     local uri
