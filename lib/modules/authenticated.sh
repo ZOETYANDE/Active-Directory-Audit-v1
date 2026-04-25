@@ -22,10 +22,10 @@ audit_authenticated() {
 
         if grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt"; then
             print_success "Identifiants valides"
-            sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+            sed -i "s|${password}|[REDACTED]|g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
         else
             print_error "Identifiants invalides"
-            sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+            sed -i "s|${password}|[REDACTED]|g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
             stop_timer "authenticated"
             return 1
         fi
