@@ -6,8 +6,11 @@ audit_dc_config() {
     local output_dir="${OUTPUT_DIR}/02_Configuration_DC"
     start_timer "dc_config"
 
+    local NMAP_T="T4"
+    [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
+
     print_test "Détection SMBv1"
-    nmap -T4 -Pn -p 445 --script smb-protocols "${DC_IP}" \
+    nmap -${NMAP_T} -Pn -p 445 --script smb-protocols "${DC_IP}" \
         -oN "${output_dir}/smb_version.txt" 2>/dev/null || true
 
     if [ -f "${output_dir}/smb_version.txt" ]; then
@@ -34,7 +37,7 @@ audit_dc_config() {
     fi
 
     if [ "${smb_signing_confirmed}" = false ]; then
-        nmap -T4 -Pn -p 445 --script smb-security-mode "${DC_IP}" \
+        nmap -${NMAP_T} -Pn -p 445 --script smb-security-mode "${DC_IP}" \
             -oN "${output_dir}/smb_signing.txt" 2>/dev/null || true
 
         if [ -f "${output_dir}/smb_signing.txt" ]; then

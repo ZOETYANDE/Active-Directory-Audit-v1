@@ -58,6 +58,9 @@ sudo ./requirements.sh
 
 # 7. List available modules
 ./activeD_Audit.sh --list-modules
+
+# 8. Run in safe mode for production (non-intrusive)
+./activeD_Audit.sh -t 192.168.199.10 -d LAB.LOCAL -u admin --safe
 ```
 
 ## 📖 Usage
@@ -83,6 +86,7 @@ MODULES:
 OPTIONS:
   --config <file>           Load config from file
   --output-dir <path>       Custom output directory
+  --safe                    Safe mode for production (T2, throttled LDAP, partial BH, no active exploits)
   --ldaps                   Use LDAPS (port 636)
   --encrypt                 GPG-encrypt final archive
   --inactivity-days <N>     Inactive account threshold (default: 90)
@@ -235,6 +239,7 @@ Group membership is also resolved via `primaryGroupID` fallback for the built-in
 - Output directory is created with mode `700`
 - Optional GPG encryption of the final archive (`--encrypt`)
 - `umask 077` enforced throughout execution
+- **Safe Mode (`--safe`)**: Limits network impact (nmap T2), throttles LDAP queries, restricts BloodHound collection size, and skips active exploit testing.
 
 ## ⚠️ Disclaimer
 

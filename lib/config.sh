@@ -34,8 +34,11 @@ auto_detect_domain() {
         return 0
     fi
 
+    local NMAP_T="T4"
+    [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
+
     local nmap_domain
-    nmap_domain=$(nmap -T4 -Pn -p 389 --script ldap-rootdse "${DC_IP}" 2>/dev/null | \
+    nmap_domain=$(nmap -${NMAP_T} -Pn -p 389 --script ldap-rootdse "${DC_IP}" 2>/dev/null | \
         grep -i "namingContexts" | head -1 | grep -oP 'DC=\K[^,]+' | head -1)
 
     if [ -n "${nmap_domain}" ]; then
