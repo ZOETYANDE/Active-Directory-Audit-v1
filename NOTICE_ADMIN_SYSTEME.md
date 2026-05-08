@@ -1,6 +1,7 @@
 # Note d'Information et Prérequis - Audit de Sécurité Active Directory
 
 **Document à l'attention de l'Administration Système et Réseau**
+*Rédigé et développé par : ZOETYANDE MOHAMED*
 
 ---
 

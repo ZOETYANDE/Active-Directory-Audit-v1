@@ -27,6 +27,7 @@ log() {
         cat > "${LOG_FILE}" <<EOF
 ================================================================================
 LOG D'EXÉCUTION - AUDIT AD v${SCRIPT_VERSION:-"1.0"}
+Auteur: ZOETYANDE MOHAMED
 ================================================================================
 Date démarrage : ${timestamp}
 Version script : ${SCRIPT_VERSION:-"1.0"}

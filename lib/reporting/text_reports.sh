@@ -89,6 +89,7 @@ generate_report() {
     cat > "${REPORT_FILE}" <<EOF
 ================================================================================
                📋 RAPPORT D'AUDIT AD v${SCRIPT_VERSION}
+               Auteur / Développeur : ZOETYANDE MOHAMED
 ================================================================================
 
 Référence: ${AUDIT_REF}
@@ -179,6 +180,7 @@ show_help() {
     cat <<EOF
 ╔═══════════════════════════════════════════════════════════════╗
 ║  AD AUDIT FRAMEWORK v${SCRIPT_VERSION}                               ║
+║  Auteur: ZOETYANDE MOHAMED                                    ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 }

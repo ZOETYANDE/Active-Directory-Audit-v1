@@ -1,4 +1,5 @@
 # 🛡️ AD Audit Framework v1.0
+**Auteur / Développeur :** ZOETYANDE MOHAMED
 
 Enterprise-grade Active Directory security assessment tool. Automates comprehensive AD auditing — from network discovery to CVE detection, BloodHound collection, ADCS analysis, and delegated permissions review — with professional HTML, JSON, and PowerShell remediation reporting.
 

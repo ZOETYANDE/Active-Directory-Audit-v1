@@ -3,6 +3,7 @@
 #===============================================================================
 #
 # ACTIVE DIRECTORY SECURITY AUDIT FRAMEWORK v1.0
+# Auteur: ZOETYANDE MOHAMED
 #
 # Enterprise-grade AD security assessment tool
 # Supports: Dynamic config, NetExec, LDAPS, BloodHound, ADCS, GPO, LAPS
