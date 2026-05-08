@@ -23,7 +23,17 @@ audit_password_policy() {
         history=$(grep -i "pwdHistoryLength:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
         lockout_dur=$(grep -i "lockoutDuration:" "${output_dir}/default_policy.txt" 2>/dev/null | awk '{print $2}' || echo "0")
 
-        print_info "📊 Longueur min: ${min_len:-N/A} | Verrouillage: ${lockout:-N/A} tentatives | Historique: ${history:-N/A} | Durée lockout: ${lockout_dur:-N/A}"
+        # Conversion lockoutDuration: LDAP stocke en intervalles 100-ns NÉGATIFS
+        # Ex: -18000000000 = 1800s = 30min  |  formule: abs(val) / 10000000 / 60
+        local lockout_dur_sec=0 lockout_dur_min=0
+        if [ -n "${lockout_dur}" ] && [ "${lockout_dur}" != "0" ]; then
+            local lockout_abs
+            lockout_abs=${lockout_dur#-}   # valeur absolue (supprime le signe -)
+            lockout_dur_sec=$(( lockout_abs / 10000000 ))
+            lockout_dur_min=$(( lockout_dur_sec / 60 ))
+        fi
+
+        print_info "📊 Longueur min: ${min_len:-N/A} | Verrouillage: ${lockout:-N/A} tentatives | Historique: ${history:-N/A} | Durée lockout: ${lockout_dur_min}min"
 
         # Longueur minimale (CIS AD Benchmark 1.1.1: >= 14 recommandé)
         if [ -n "${min_len}" ] && [ "${min_len}" -lt 12 ] 2>/dev/null; then
@@ -51,13 +61,16 @@ audit_password_policy() {
             print_success "Verrouillage après ${lockout} tentatives (correct)"
         fi
 
-        # Durée de verrouillage (CIS: >= 15 min)
-        if [ -n "${lockout_dur}" ] && [ "${lockout_dur}" != "0" ] && [ "${lockout_dur}" -lt 900 ] 2>/dev/null; then
-            local dur_min=$(( lockout_dur / 60 ))
-            print_warning "⚠️  Durée de verrouillage courte: ${dur_min} min"
-            add_finding "LOW" "Durée Verrouillage Insuffisante" \
-                "Durée de verrouillage: ${dur_min} min. Réf: CIS AD Benchmark 1.2.2 recommande ≥15 min." \
-                "${output_dir}/default_policy.txt"
+        # Durée de verrouillage (CIS: >= 15 min) — ignorée si pas de lockout configuré
+        if [ -n "${lockout}" ] && [ "${lockout}" -gt 0 ] 2>/dev/null; then
+            if [ "${lockout_dur_min}" -gt 0 ] && [ "${lockout_dur_min}" -lt 15 ] 2>/dev/null; then
+                print_warning "⚠️  Durée de verrouillage courte: ${lockout_dur_min} min (recommandé: ≥15 min)"
+                add_finding "LOW" "Durée Verrouillage Insuffisante" \
+                    "Durée de verrouillage: ${lockout_dur_min} min. Réf: CIS AD Benchmark 1.2.2 recommande ≥15 min." \
+                    "${output_dir}/default_policy.txt"
+            elif [ "${lockout_dur_min}" -ge 15 ] 2>/dev/null; then
+                print_success "Durée de verrouillage correcte: ${lockout_dur_min} min"
+            fi
         fi
     else
         print_warning "Impossible de lire la politique"
