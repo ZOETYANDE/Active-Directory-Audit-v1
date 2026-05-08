@@ -441,28 +441,36 @@ EOF
         password=$(<"${pwd_file}")
         
         print_test "Vérification des identifiants..."
-        
-        # Test rapide via LDAP (très fiable)
-        if command_exists "ldapsearch"; then
-            if ldapsearch -x -H "ldap://${DC_IP}" -D "${username}@${DOMAIN}" -w "${password}" -b "" -s base 2>&1 | grep -qi "Invalid credentials"; then
-                print_error "🔴 Identifiants invalides: Mot de passe incorrect ou compte inexistant/verrouillé."
-                exit 1
-            else
-                print_success "Authentification réussie"
-            fi
-        fi
+        local auth_success=false
 
+        # Priorité 1: Validation via SMB (NetExec/CME) car NTLM gère mieux les formats de noms d'utilisateurs
         if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
-            smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\"" \
+            smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
                 > "${OUTPUT_DIR}/cred_test.txt" 2>&1 || true
             
-            # Check si NXC/CME retourne explicitement Logon Failure
             if grep -qiE "STATUS_LOGON_FAILURE|Logon failure" "${OUTPUT_DIR}/cred_test.txt"; then
                 print_error "🔴 Identifiants invalides (Vérifié via SMB): Mot de passe incorrect ou compte verrouillé."
                 exit 1
+            elif grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt"; then
+                print_success "Authentification réussie (SMB)"
+                auth_success=true
+            else
+                print_warning "Réponse SMB inattendue, on laisse le bénéfice du doute..."
+                auth_success=true
             fi
             
-            sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+            sed -i "s|${password}|[REDACTED]|g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+
+        # Priorité 2: Validation via LDAP si SMB n'est pas disponible
+        elif command_exists "ldapsearch"; then
+            # On tente le Bind UPN (user@domain)
+            if ldapsearch -x -H "ldap://${DC_IP}" -D "${username}@${DOMAIN}" -w "${password}" -b "" -s base 2>&1 | grep -qi "Invalid credentials"; then
+                print_error "🔴 Identifiants invalides (Vérifié via LDAP): Mot de passe incorrect."
+                exit 1
+            else
+                print_success "Authentification réussie (LDAP)"
+                auth_success=true
+            fi
         fi
 
         # Unauthenticated modules first
