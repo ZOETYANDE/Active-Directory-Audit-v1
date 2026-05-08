@@ -27,7 +27,7 @@ Enterprise-grade Active Directory security assessment tool. Automates comprehens
 | 🛡️ **ACL** | AdminSDHolder, adminCount analysis |
 | 🌐 **Trusts** | Forest/domain trusts, SID filtering |
 | 💻 **LAPS** | Schema detection, coverage analysis |
-| 📜 **ADCS** | CA enumeration, ESC1-ESC8 vulnerability detection (certipy) |
+| 📜 **ADCS** | CA enumeration, ESC1-ESC8 vulnerability detection (certipy-ad) |
 | 🩸 **BloodHound** | Automated collection with FQDN auto-resolution |
 | 🔓 **SMB Unauth** | enum4linux-ng, null session testing, anonymous share access |
 | 🌍 **DNS** | Zone transfer test, wildcard detection, SRV enumeration |
@@ -203,7 +203,7 @@ DOMAIN_Audit_YYYYMMDD_HHMMSS/
 | Tool | Purpose | Module |
 |------|---------|--------|
 | `nxc` (NetExec) | SMB enumeration, GPP passwords, CVE checks | shares, vulns, dc_config |
-| `certipy` | ADCS vulnerability scanning (ESC1-ESC8) | adcs |
+| `certipy-ad` | ADCS vulnerability scanning (ESC1-ESC8) | adcs |
 | `enum4linux-ng` | Anonymous SMB enumeration | smb_unauth |
 | `smbclient` | SYSVOL content scanning, null share test | shares, smb_unauth |
 | `dig` | DNS zone transfer, wildcard, SRV records | dns |

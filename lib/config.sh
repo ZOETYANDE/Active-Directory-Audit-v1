@@ -226,19 +226,27 @@ test_connectivity() {
 
     if grep -qi "clock-skew:" "${skew_output}"; then
         local skew_val
-        skew_val=$(grep -i "clock-skew:" "${skew_output}" | awk -F': ' '{print $2}')
+        skew_val=$(grep -i "clock-skew:" "${skew_output}" | awk -F'clock-skew: ' '{print $2}' | awk '{print $1}')
         print_info "Clock Skew détecté: ${skew_val}"
-        
-        # Vérification de la tolérance pour Kerberos (default 5 min)
+
+        # Vérification de la tolérance pour Kerberos (max_skew en minutes → en secondes)
         local max_skew=${MAX_CLOCK_SKEW:-5}
-        if echo "${skew_val}" | grep -qiE "h|d" || [[ $(echo "${skew_val}" | grep -o '[0-9]\+m' | tr -d 'm' | head -n1) -ge ${max_skew} ]] 2>/dev/null; then
-            print_warning "⚠️ Clock Skew > ${max_skew} min ! L'authentification Kerberos (NXC, BloodHound) risque d'échouer."
-            log "WARNING" "Clock Skew important détecté: ${skew_val}"
+        local max_skew_sec=$(( max_skew * 60 ))
+
+        # Extraire la valeur absolue en secondes (nmap retourne des valeurs comme '30s', '-300s', 'mean: 42s')
+        local skew_abs_sec
+        skew_abs_sec=$(echo "${skew_val}" | grep -oE '-?[0-9]+' | head -1 | tr -d '-' || echo "0")
+        skew_abs_sec=${skew_abs_sec:-0}
+
+        if [ "${skew_abs_sec}" -ge "${max_skew_sec}" ] 2>/dev/null; then
+            local skew_min=$(( skew_abs_sec / 60 ))
+            print_warning "⚠️  Clock Skew = ${skew_abs_sec}s (${skew_min}min) > ${max_skew}min ! L'authentification Kerberos (NXC, BloodHound) risque d'échouer."
+            log "WARNING" "Clock Skew important détecté: ${skew_val} (${skew_abs_sec}s)"
         else
-            print_success "Clock Skew acceptable pour Kerberos"
+            print_success "Clock Skew acceptable: ${skew_abs_sec}s < ${max_skew_sec}s (limite Kerberos)"
         fi
     else
-        print_warning "Impossible de vérifier le Clock Skew"
+        print_warning "Impossible de vérifier le Clock Skew (nmap smb-os-discovery sans résultat)"
     fi
 
     stop_timer "connectivity"

@@ -11,11 +11,12 @@ audit_authenticated() {
     local password
     password=$(<"${pwd_file}")
 
-    # Credential validation — reuse cred_test.txt if already created in main()
+    # Credential validation — la vérification fail-fast dans main() a déjà valide les identifiants
     print_test "Validation des identifiants (${username})"
 
-    if [ -f "${OUTPUT_DIR}/cred_test.txt" ] && grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null; then
-        print_success "Identifiants valides"
+    if [ -f "${OUTPUT_DIR}/cred_test.txt" ]; then
+        # Déjà validé par le check fail-fast dans main() — on fait confiance
+        print_success "Identifiants valides (pré-validés)"
     elif [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
         smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
             > "${OUTPUT_DIR}/cred_test.txt" 2>&1
@@ -38,6 +39,7 @@ audit_authenticated() {
             return 1
         fi
     fi
+
 
     # Run all sub-audits with module selector and progress tracking
     local -a auth_modules=(

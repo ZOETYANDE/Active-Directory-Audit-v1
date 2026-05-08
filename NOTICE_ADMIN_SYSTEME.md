@@ -31,7 +31,7 @@ L'audit s'appuie sur des outils standards de l'industrie de la cybersécurité, 
 *   `bloodhound-python` / `impacket` (Cartographie des chemins d'attaque et des dépendances de droits).
 *   `nxc` (NetExec), `enum4linux-ng` et `smbclient` (Énumération SMB, accès aux partages et vérifications de configurations).
 *   `dig` (Vérification de la sécurité de la zone DNS : transferts de zone, etc.).
-*   `certipy` (Analyse de la configuration ADCS - si applicable).
+*   `certipy-ad` (Analyse de la configuration ADCS - si applicable).
 
 ## 5. Prérequis pour la Réalisation de l'Audit
 Afin de réaliser cet audit dans des conditions optimales, les éléments suivants sont requis de la part de l'équipe système :

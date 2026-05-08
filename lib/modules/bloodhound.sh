@@ -117,15 +117,17 @@ audit_bloodhound() {
     echo ""
 
     # shellcheck disable=SC2086
-    bloodhound-python \
-        -c "${BH_COLLECTION}" \
-        -d "${domain_lower}" \
-        -u "${username}" \
-        -p "${password}" \
-        -dc "${dc_fqdn}" \
-        -ns "${DC_IP}" \
-        ${BH_THROTTLE} \
-        --zip 2>&1 | tee bloodhound_output.log
+    local bh_cmd=(bloodhound-python
+        -c "${BH_COLLECTION}"
+        -d "${domain_lower}"
+        -u "${username}"
+        -p "${password}"
+        -dc "${dc_fqdn}"
+        -ns "${DC_IP}"
+        --zip
+    )
+
+    "${bh_cmd[@]}" 2>&1 | tee bloodhound_output.log
 
     local exit_code=${PIPESTATUS[0]}
 
@@ -136,9 +138,15 @@ audit_bloodhound() {
     # Retry sans --zip si besoin
     if [ ${zip_count} -eq 0 ] && [ ${json_count} -eq 0 ] && [ ${exit_code} -ne 0 ]; then
         print_warning "Retry sans --zip..."
-        # shellcheck disable=SC2086
-        bloodhound-python -c "${BH_COLLECTION}" -d "${domain_lower}" -u "${username}" \
-            -p "${password}" -dc "${dc_fqdn}" -ns "${DC_IP}" ${BH_THROTTLE} 2>&1 | tee -a bloodhound_output.log
+        local bh_cmd_nozip=(bloodhound-python
+            -c "${BH_COLLECTION}"
+            -d "${domain_lower}"
+            -u "${username}"
+            -p "${password}"
+            -dc "${dc_fqdn}"
+            -ns "${DC_IP}"
+        )
+        "${bh_cmd_nozip[@]}" 2>&1 | tee -a bloodhound_output.log
         json_count=$(find . -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l)
         zip_count=$(find . -maxdepth 1 -name "*.zip" -type f 2>/dev/null | wc -l)
     fi
