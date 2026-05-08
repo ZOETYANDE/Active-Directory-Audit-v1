@@ -90,14 +90,14 @@ audit_bloodhound() {
     fi
     print_success "Mot de passe chargé (${#password} caractères)"
 
-    # En SAFE_MODE: collecte partielle + throttle pour limiter l'impact réseau
+    # Méthodes valides BloodHound Legacy (4.x): Group, LocalAdmin, Session, Trusts,
+    # ObjectProps, ACL, DCOM, RDP, PSRemote, LoggedOn, Default, DCOnly, All, ComputerOnly
     local BH_COLLECTION="All"
-    local BH_THROTTLE=""
     if [ "${SAFE_MODE}" = true ]; then
-        BH_COLLECTION="Group,User,Session"
-        # --throttle n'est pas supporté par la version standard de bloodhound-python
-        BH_THROTTLE=""
-        print_warning "🛡️  SAFE_MODE: collecte partielle (${BH_COLLECTION})"
+        # DCOnly = Group + Trusts + ACL + ObjectProps — LDAP uniquement sur le DC,
+        # sans connexion aux postes de travail (non intrusif, idéal en production)
+        BH_COLLECTION="DCOnly"
+        print_warning "🛡️  SAFE_MODE: collecte DCOnly (LDAP sur DC uniquement, sans scan des postes)"
     fi
 
     # Execute BloodHound

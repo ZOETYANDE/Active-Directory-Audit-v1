@@ -219,34 +219,68 @@ test_connectivity() {
 
     print_test "Dérive temporelle (Clock Skew Kerberos)"
     local skew_output="${OUTPUT_DIR}/clock_skew.txt"
-    local NMAP_T="T4"
-    [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
+    local max_skew=${MAX_CLOCK_SKEW:-5}
+    local max_skew_sec=$(( max_skew * 60 ))
+    local skew_abs_sec=0
+    local skew_source=""
 
-    nmap -${NMAP_T} -Pn -p 445 --script smb-os-discovery "${DC_IP}" > "${skew_output}" 2>/dev/null || true
+    # ── Méthode 1 : HTTP Date header via curl (la plus fiable) ──────────────────
+    if command_exists curl; then
+        local server_date_raw
+        server_date_raw=$(curl -sI --connect-timeout 3 --max-time 5 \
+            "http://${DC_IP}" 2>/dev/null | grep -i "^Date:" | head -1 | \
+            sed 's/[Dd]ate: //' | tr -d '\r')
 
-    if grep -qi "clock-skew:" "${skew_output}"; then
-        local skew_val
-        skew_val=$(grep -i "clock-skew:" "${skew_output}" | awk -F'clock-skew: ' '{print $2}' | awk '{print $1}')
-        print_info "Clock Skew détecté: ${skew_val}"
+        if [ -n "${server_date_raw}" ]; then
+            local server_ts local_ts
+            server_ts=$(date -d "${server_date_raw}" +%s 2>/dev/null || echo "0")
+            local_ts=$(date +%s)
 
-        # Vérification de la tolérance pour Kerberos (max_skew en minutes → en secondes)
-        local max_skew=${MAX_CLOCK_SKEW:-5}
-        local max_skew_sec=$(( max_skew * 60 ))
+            if [ "${server_ts}" -gt 0 ] 2>/dev/null; then
+                skew_abs_sec=$(( server_ts - local_ts ))
+                [ "${skew_abs_sec}" -lt 0 ] && skew_abs_sec=$(( -skew_abs_sec ))
+                skew_source="HTTP Date header"
+                echo "Méthode: HTTP Date | Serveur: ${server_date_raw} | Skew: ${skew_abs_sec}s" > "${skew_output}"
+            fi
+        fi
+    fi
 
-        # Extraire la valeur absolue en secondes (nmap retourne des valeurs comme '30s', '-300s', 'mean: 42s')
-        local skew_abs_sec
-        skew_abs_sec=$(echo "${skew_val}" | grep -oE '-?[0-9]+' | head -1 | tr -d '-' || echo "0")
-        skew_abs_sec=${skew_abs_sec:-0}
+    # ── Méthode 2 : nmap smb-os-discovery (fallback) ────────────────────────────
+    if [ "${skew_abs_sec}" -eq 0 ] && command_exists nmap; then
+        local NMAP_T="T4"
+        [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
+        nmap -${NMAP_T} -Pn -p 445 --script smb-os-discovery "${DC_IP}" \
+            >> "${skew_output}" 2>/dev/null || true
+
+        if grep -qi "clock-skew:" "${skew_output}"; then
+            local nmap_skew_raw
+            nmap_skew_raw=$(grep -i "clock-skew:" "${skew_output}" | \
+                awk -F'clock-skew: ' '{print $2}' | awk '{print $1}')
+            skew_abs_sec=$(echo "${nmap_skew_raw}" | grep -oE '-?[0-9]+' | head -1 | \
+                tr -d '-' || echo "0")
+            skew_abs_sec=${skew_abs_sec:-0}
+            skew_source="nmap smb-os-discovery"
+        fi
+    fi
+
+    # ── Évaluation du résultat ───────────────────────────────────────────────────
+    if [ "${skew_abs_sec}" -gt 0 ] || [ -n "${skew_source}" ]; then
+        local skew_min=$(( skew_abs_sec / 60 ))
+        print_info "Clock Skew = ${skew_abs_sec}s (${skew_min}min) — source: ${skew_source}"
+        log_data "Clock Skew" "${skew_abs_sec}s" "${skew_source}"
 
         if [ "${skew_abs_sec}" -ge "${max_skew_sec}" ] 2>/dev/null; then
-            local skew_min=$(( skew_abs_sec / 60 ))
-            print_warning "⚠️  Clock Skew = ${skew_abs_sec}s (${skew_min}min) > ${max_skew}min ! L'authentification Kerberos (NXC, BloodHound) risque d'échouer."
-            log "WARNING" "Clock Skew important détecté: ${skew_val} (${skew_abs_sec}s)"
+            print_warning "⚠️  Clock Skew = ${skew_abs_sec}s > ${max_skew}min ! Kerberos va échouer (NXC, BloodHound, certipy-ad)."
+            print_info "💡 Correction: sudo date -s \"\$(curl -sI http://${DC_IP} | grep '^Date:' | sed 's/Date: //' | tr -d '\\r')\""
+            log "WARNING" "Clock Skew hors tolérance: ${skew_abs_sec}s (max: ${max_skew_sec}s)"
         else
-            print_success "Clock Skew acceptable: ${skew_abs_sec}s < ${max_skew_sec}s (limite Kerberos)"
+            print_success "Clock Skew acceptable: ${skew_abs_sec}s < ${max_skew_sec}s (limite Kerberos: ${max_skew}min)"
         fi
     else
-        print_warning "Impossible de vérifier le Clock Skew (nmap smb-os-discovery sans résultat)"
+        print_warning "Impossible de mesurer le Clock Skew (curl et nmap sans résultat)"
+        print_info "💡 Correction manuelle si Kerberos échoue:"
+        print_info "   sudo date -s \"\$(curl -sI http://${DC_IP} | grep '^Date:' | sed 's/Date: //' | tr -d '\\r')\""
+        log "WARNING" "Clock Skew non mesurable"
     fi
 
     stop_timer "connectivity"
