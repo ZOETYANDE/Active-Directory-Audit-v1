@@ -34,6 +34,7 @@ BASE_DN=""
 LDAPS_MODE=false
 ENCRYPT_OUTPUT=false
 INACTIVITY_DAYS=90
+MAX_CLOCK_SKEW=5
 CUSTOM_OUTPUT_DIR=""
 CONFIG_FILE=""
 
@@ -161,6 +162,7 @@ OPTIONS:
   --ldaps                   Use LDAPS (port 636)
   --encrypt                 GPG encrypt final archive
   --inactivity-days <N>     Inactive threshold (default: 90)
+  --max-clock-skew <N>      Kerberos max clock skew in minutes (default: 5)
 
 SECURITE OPERATIONNELLE:
   --safe                    Mode production (nmap T2, BloodHound partiel, LDAP_DELAY=1)
@@ -273,6 +275,9 @@ main() {
                 ;;
             --inactivity-days)
                 INACTIVITY_DAYS="$2"; shift 2
+                ;;
+            --max-clock-skew)
+                MAX_CLOCK_SKEW="$2"; shift 2
                 ;;
             --debug)
                 DEBUG_MODE=true; shift
@@ -430,12 +435,32 @@ EOF
         print_header "AUDIT COMPLET — ${DOMAIN}"
         log "INFO" "Audit complet démarré — user: ${username} | domain: ${DOMAIN} | dc: ${DC_IP}"
 
-        # Credential quick test BEFORE dc_config to enable SMB signing cross-validation
+        # Credential quick test & validation BEFORE modules to fail-fast
         local password
         password=$(<"${pwd_file}")
+        
+        print_test "Vérification des identifiants..."
+        
+        # Test rapide via LDAP (très fiable)
+        if command_exists "ldapsearch"; then
+            if ldapsearch -x -H "ldap://${DC_IP}" -D "${username}@${DOMAIN}" -w "${password}" -b "" -s base 2>&1 | grep -qi "Invalid credentials"; then
+                print_error "🔴 Identifiants invalides: Mot de passe incorrect ou compte inexistant/verrouillé."
+                exit 1
+            else
+                print_success "Authentification réussie"
+            fi
+        fi
+
         if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
             smb_tool_exec "\"${DC_IP}\" -u \"${username}\" -p \"${password}\" -d \"${DOMAIN}\"" \
                 > "${OUTPUT_DIR}/cred_test.txt" 2>&1 || true
+            
+            # Check si NXC/CME retourne explicitement Logon Failure
+            if grep -qiE "STATUS_LOGON_FAILURE|Logon failure" "${OUTPUT_DIR}/cred_test.txt"; then
+                print_error "🔴 Identifiants invalides (Vérifié via SMB): Mot de passe incorrect ou compte verrouillé."
+                exit 1
+            fi
+            
             sed -i "s/${password}/[REDACTED]/g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
         fi
 

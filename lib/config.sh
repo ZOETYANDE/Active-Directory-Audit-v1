@@ -83,6 +83,7 @@ load_config() {
             LDAP_DELAY)       LDAP_DELAY="${value}" ;;
             SAFE_MODE)        SAFE_MODE="${value}" ;;
             ALLOWED_HOURS)    ALLOWED_HOURS="${value}" ;;
+            MAX_CLOCK_SKEW)   MAX_CLOCK_SKEW="${value}" ;;
         esac
     done < "${config}"
 
@@ -215,6 +216,30 @@ test_connectivity() {
             log_data "Port ${port}" "FERMÉ" "test TCP"
         fi
     done
+
+    print_test "Dérive temporelle (Clock Skew Kerberos)"
+    local skew_output="${OUTPUT_DIR}/clock_skew.txt"
+    local NMAP_T="T4"
+    [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
+
+    nmap -${NMAP_T} -Pn -p 445 --script smb-os-discovery "${DC_IP}" > "${skew_output}" 2>/dev/null || true
+
+    if grep -qi "clock-skew:" "${skew_output}"; then
+        local skew_val
+        skew_val=$(grep -i "clock-skew:" "${skew_output}" | awk -F': ' '{print $2}')
+        print_info "Clock Skew détecté: ${skew_val}"
+        
+        # Vérification de la tolérance pour Kerberos (default 5 min)
+        local max_skew=${MAX_CLOCK_SKEW:-5}
+        if echo "${skew_val}" | grep -qiE "h|d" || [[ $(echo "${skew_val}" | grep -o '[0-9]\+m' | tr -d 'm' | head -n1) -ge ${max_skew} ]] 2>/dev/null; then
+            print_warning "⚠️ Clock Skew > ${max_skew} min ! L'authentification Kerberos (NXC, BloodHound) risque d'échouer."
+            log "WARNING" "Clock Skew important détecté: ${skew_val}"
+        else
+            print_success "Clock Skew acceptable pour Kerberos"
+        fi
+    else
+        print_warning "Impossible de vérifier le Clock Skew"
+    fi
 
     stop_timer "connectivity"
 }

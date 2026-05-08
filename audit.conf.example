@@ -20,6 +20,10 @@ ENCRYPT_OUTPUT=false        # GPG-encrypt the final archive
 # SECURITE OPERATIONNELLE
 # ═══════════════════════════════════════════════════════
 
+# Tolérance max de dérive temporelle (en minutes) pour Kerberos
+MAX_CLOCK_SKEW=5
+
+
 # Délai entre chaque requête LDAP (secondes)
 #   0 = aucun délai (défaut, rapide)
 #   1 = prudent (recommandé sur production)

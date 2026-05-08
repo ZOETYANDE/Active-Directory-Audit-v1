@@ -95,8 +95,9 @@ audit_bloodhound() {
     local BH_THROTTLE=""
     if [ "${SAFE_MODE}" = true ]; then
         BH_COLLECTION="Group,User,Session"
-        BH_THROTTLE="--throttle 2"
-        print_warning "🛡️  SAFE_MODE: collecte partielle (${BH_COLLECTION}) + throttle 2s"
+        # --throttle n'est pas supporté par la version standard de bloodhound-python
+        BH_THROTTLE=""
+        print_warning "🛡️  SAFE_MODE: collecte partielle (${BH_COLLECTION})"
     fi
 
     # Execute BloodHound
