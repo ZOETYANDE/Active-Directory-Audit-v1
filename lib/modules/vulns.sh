@@ -25,18 +25,18 @@ audit_vulnerabilities() {
         sed -i "s|${password}|[REDACTED]|g" "${output_dir}/spooler.txt" 2>/dev/null || true
 
         if grep -qi "Spooler service is running" "${output_dir}/spooler.txt" 2>/dev/null; then
-            print_error "\U0001f534 Print Spooler actif sur le DC!"
-            add_finding_remediation "CRITICAL" "Print Spooler Actif (PrintNightmare)" "Le service Print Spooler est actif sur ${DC_IP}. Vuln\u00e9rable \u00e0 CVE-2021-34527." \
+            print_error "🔴 Print Spooler actif sur le DC!"
+            add_finding_remediation "CRITICAL" "Print Spooler Actif (PrintNightmare)" "Le service Print Spooler est actif sur ${DC_IP}. Vulnérable à CVE-2021-34527." \
                 "${output_dir}/spooler.txt" \
                 "# Disable Print Spooler on Domain Controllers\nStop-Service -Name Spooler -Force\nSet-Service -Name Spooler -StartupType Disabled"
         else
-            print_success "Print Spooler non actif ou non d\u00e9tect\u00e9"
+            print_success "Print Spooler non actif ou non détecté"
         fi
 
-        # Modules intrusifs — skipp\u00e9s en SAFE_MODE
+        # Modules intrusifs — skippés en SAFE_MODE
         if [ "${SAFE_MODE}" = true ]; then
-            print_warning "\u26a0\ufe0f  SAFE_MODE actif: coerce_plus, zerologon et nopac ignor\u00e9s (tests intrusifs)"
-            log "INFO" "SAFE_MODE: modules SMB intrusifs ignor\u00e9s"
+            print_warning "⚠️  SAFE_MODE actif: coerce_plus, zerologon et nopac ignorés (tests intrusifs)"
+            log "INFO" "SAFE_MODE: modules SMB intrusifs ignorés"
         else
             # Coercion Attacks
             print_test "Attaques de Coercition NTLM (via coerce_plus)"
@@ -47,13 +47,13 @@ audit_vulnerabilities() {
             if grep -qi "VULNERABLE" "${output_dir}/coercion.txt" 2>/dev/null; then
                 local vulns_found
                 vulns_found=$(grep -i "VULNERABLE" "${output_dir}/coercion.txt" | cut -d',' -f2 | xargs | sed 's/ /, /g')
-                print_error "\U0001f534 Vuln\u00e9rable aux attaques de coercition : ${vulns_found}!"
+                print_error "🔴 Vulnérable aux attaques de coercition : ${vulns_found}!"
                 add_finding_remediation "HIGH" "Attaques de Coercition NTLM (${vulns_found})" \
-                    "Le DC est vuln\u00e9rable \u00e0 plusieurs vecteurs de coercition NTLM : ${vulns_found}. Un attaquant peut forcer l'authentification NTLM vers une machine qu'il contr\u00f4le." \
+                    "Le DC est vulnérable à plusieurs vecteurs de coercition NTLM : ${vulns_found}. Un attaquant peut forcer l'authentification NTLM vers une machine qu'il contrôle." \
                     "${output_dir}/coercion.txt" \
-                    "# Rem\u00e9diations :\n# 1. D\u00e9sactiver NTLM l\u00e0 o\u00f9 c'est possible\n# 2. Activer Extended Protection for Authentication (EPA)\n# 3. Utiliser des filtres RPC pour bloquer les m\u00e9thodes vuln\u00e9rables\n# 4. Appliquer les correctifs (ex: KB5005413)"
+                    "# Remédiations :\n# 1. Désactiver NTLM là où c'est possible\n# 2. Activer Extended Protection for Authentication (EPA)\n# 3. Utiliser des filtres RPC pour bloquer les méthodes vulnérables\n# 4. Appliquer les correctifs (ex: KB5005413)"
             else
-                print_success "Aucune vuln\u00e9rabilit\u00e9 de coercition NTLM d\u00e9tect\u00e9e"
+                print_success "Aucune vulnérabilité de coercition NTLM détectée"
             fi
 
             # ZeroLogon
@@ -63,12 +63,12 @@ audit_vulnerabilities() {
             sed -i "s|${password}|[REDACTED]|g" "${output_dir}/zerologon.txt" 2>/dev/null || true
 
             if grep -qiE "VULNERABLE|vuln" "${output_dir}/zerologon.txt" 2>/dev/null; then
-                print_error "\U0001f534 VULN\u00c9RABLE \u00c0 ZEROLOGON!"
-                add_finding_remediation "CRITICAL" "ZeroLogon (CVE-2020-1472)" "Le DC est vuln\u00e9rable \u00e0 ZeroLogon. Compromission du domaine possible sans authentification!" \
+                print_error "🔴 VULNÉRABLE À ZEROLOGON!"
+                add_finding_remediation "CRITICAL" "ZeroLogon (CVE-2020-1472)" "Le DC est vulnérable à ZeroLogon. Compromission du domaine possible sans authentification!" \
                     "${output_dir}/zerologon.txt" \
                     "# Apply ZeroLogon patches immediately!\n# Ensure FullSecureChannelProtection is enforced\nSet-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon\\Parameters' -Name 'FullSecureChannelProtection' -Value 1"
             else
-                print_success "ZeroLogon non vuln\u00e9rable"
+                print_success "ZeroLogon non vulnérable"
             fi
 
             # noPac
@@ -78,17 +78,18 @@ audit_vulnerabilities() {
             sed -i "s|${password}|[REDACTED]|g" "${output_dir}/nopac.txt" 2>/dev/null || true
 
             if grep -qiE "VULNERABLE|vuln" "${output_dir}/nopac.txt" 2>/dev/null; then
-                print_error "\U0001f534 Vuln\u00e9rable \u00e0 noPac!"
-                add_finding_remediation "HIGH" "noPac (CVE-2021-42278/42287)" "Vuln\u00e9rable \u00e0 l'usurpation sAMAccountName. Escalade vers Domain Admin possible." \
+                print_error "🔴 Vulnérable à noPac!"
+                add_finding_remediation "HIGH" "noPac (CVE-2021-42278/42287)" "Vulnérable à l'usurpation sAMAccountName. Escalade vers Domain Admin possible." \
                     "${output_dir}/nopac.txt" \
                     "# Apply patches KB5008380 and KB5008602"
             else
-                print_success "noPac non vuln\u00e9rable"
+                print_success "noPac non vulnérable"
             fi
         fi
     else
-        print_info "Pas d'outil SMB \u2014 v\u00e9rifications de vuln\u00e9rabilit\u00e9s limit\u00e9es"
+        print_info "Pas d'outil SMB — vérifications de vulnérabilités limitées"
     fi
+
 
     # EternalBlue (MS17-010) via nmap
     print_test "EternalBlue (MS17-010)"

@@ -399,7 +399,7 @@ EOF
     # Appliquer SAFE_MODE
     if [ "${SAFE_MODE}" = true ]; then
         [ "${LDAP_DELAY}" -eq 0 ] 2>/dev/null && LDAP_DELAY=1
-        log "INFO" "SAFE_MODE activé: LDAP_DELAY=${LDAP_DELAY}, nmap T2, BloodHound -c Group,User"
+        log "INFO" "SAFE_MODE activé: LDAP_DELAY=${LDAP_DELAY}, nmap T2, BloodHound -c DCOnly"
     fi
 
     # Requirements
