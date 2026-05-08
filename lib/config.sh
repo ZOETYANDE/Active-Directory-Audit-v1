@@ -298,8 +298,20 @@ test_connectivity() {
 
         if [ "${skew_abs_sec}" -ge "${max_skew_sec}" ] 2>/dev/null; then
             print_warning "⚠️  Clock Skew = ${skew_abs_sec}s > ${max_skew}min ! Kerberos va échouer (NXC, BloodHound, certipy-ad)."
-            echo "   💡 Correction: ${fix_cmd}"
             log "WARNING" "Clock Skew hors tolérance: ${skew_abs_sec}s (max: ${max_skew_sec}s)"
+            
+            if [ "${NO_CONFIRM}" != true ]; then
+                echo -n -e "   🔄 Voulez-vous synchroniser l'heure de votre machine avec le DC ? (nécessite sudo) [o/N]: "
+                read -r sync_choice
+                if [[ "${sync_choice}" =~ ^[Oo]$ ]]; then
+                    print_info "Synchronisation en cours..."
+                    eval "${fix_cmd}" && print_success "Heure synchronisée avec succès !" || print_error "Échec de la synchronisation (droits sudo ?)"
+                else
+                    echo "   💡 Pour corriger manuellement: ${fix_cmd}"
+                fi
+            else
+                echo "   💡 Correction manuelle: ${fix_cmd}"
+            fi
         else
             print_success "Clock Skew acceptable: ${skew_abs_sec}s < ${max_skew_sec}s (limite Kerberos: ${max_skew}min)"
         fi
