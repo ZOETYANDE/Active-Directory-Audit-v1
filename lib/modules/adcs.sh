@@ -46,7 +46,7 @@ audit_adcs() {
             local password
             password=$(<"${pwd_file}")
 
-            certipy find -u "${username}@${DOMAIN}" -p "${password}" \
+            certipy-ad find -u "${username}@${DOMAIN}" -p "${password}" \
                 -dc-ip "${DC_IP}" -vulnerable -stdout \
                 > "${output_dir}/certipy_vulnerable.txt" 2>&1 || true
 
