@@ -224,8 +224,32 @@ test_connectivity() {
     local skew_abs_sec=0
     local skew_source=""
 
-    # ── Méthode 1 : HTTP Date header via curl (la plus fiable) ──────────────────
-    if command_exists curl; then
+    # ── Méthode 1 : LDAP rootDSE currentTime (port 389 — toujours dispo sur un DC) ──
+    if command_exists ldapsearch; then
+        local ldap_time_raw
+        ldap_time_raw=$(ldapsearch -x -H "ldap://${DC_IP}" -b "" -s base \
+            "(objectClass=*)" currentTime 2>/dev/null | \
+            grep -i "currentTime:" | awk '{print $2}' | tr -d '\r\n')
+
+        # Format LDAP: 20240508154820.0Z → timestamp unix
+        if [ -n "${ldap_time_raw}" ]; then
+            local ldap_clean
+            ldap_clean=$(echo "${ldap_time_raw}" | sed 's/\\..*Z$//' | sed 's/Z$//')
+            local server_ts local_ts
+            server_ts=$(date -d "${ldap_clean:0:8} ${ldap_clean:8:2}:${ldap_clean:10:2}:${ldap_clean:12:2} UTC" +%s 2>/dev/null || echo "0")
+            local_ts=$(date +%s)
+
+            if [ "${server_ts:-0}" -gt 0 ] 2>/dev/null; then
+                skew_abs_sec=$(( server_ts - local_ts ))
+                [ "${skew_abs_sec}" -lt 0 ] && skew_abs_sec=$(( -skew_abs_sec ))
+                skew_source="LDAP rootDSE (currentTime)"
+                echo "Méthode: LDAP rootDSE | Serveur: ${ldap_time_raw} | Skew: ${skew_abs_sec}s" > "${skew_output}"
+            fi
+        fi
+    fi
+
+    # ── Méthode 2 : HTTP Date header via curl ───────────────────────────────────
+    if [ "${skew_abs_sec}" -eq 0 ] && command_exists curl; then
         local server_date_raw
         server_date_raw=$(curl -sI --connect-timeout 3 --max-time 5 \
             "http://${DC_IP}" 2>/dev/null | grep -i "^Date:" | head -1 | \
@@ -236,7 +260,7 @@ test_connectivity() {
             server_ts=$(date -d "${server_date_raw}" +%s 2>/dev/null || echo "0")
             local_ts=$(date +%s)
 
-            if [ "${server_ts}" -gt 0 ] 2>/dev/null; then
+            if [ "${server_ts:-0}" -gt 0 ] 2>/dev/null; then
                 skew_abs_sec=$(( server_ts - local_ts ))
                 [ "${skew_abs_sec}" -lt 0 ] && skew_abs_sec=$(( -skew_abs_sec ))
                 skew_source="HTTP Date header"
@@ -245,7 +269,7 @@ test_connectivity() {
         fi
     fi
 
-    # ── Méthode 2 : nmap smb-os-discovery (fallback) ────────────────────────────
+    # ── Méthode 3 : nmap smb-os-discovery (dernier recours) ────────────────────
     if [ "${skew_abs_sec}" -eq 0 ] && command_exists nmap; then
         local NMAP_T="T4"
         [ "${SAFE_MODE}" = true ] && NMAP_T="T2"
@@ -263,6 +287,9 @@ test_connectivity() {
         fi
     fi
 
+    # Commande de correction (sans echo -e pour éviter l'interprétation de \r)
+    local fix_cmd="sudo date -s \"\$(curl -sI http://${DC_IP} | grep '^Date:' | sed 's/Date: //' | tr -d '\\r')\""
+
     # ── Évaluation du résultat ───────────────────────────────────────────────────
     if [ "${skew_abs_sec}" -gt 0 ] || [ -n "${skew_source}" ]; then
         local skew_min=$(( skew_abs_sec / 60 ))
@@ -271,17 +298,18 @@ test_connectivity() {
 
         if [ "${skew_abs_sec}" -ge "${max_skew_sec}" ] 2>/dev/null; then
             print_warning "⚠️  Clock Skew = ${skew_abs_sec}s > ${max_skew}min ! Kerberos va échouer (NXC, BloodHound, certipy-ad)."
-            print_info "💡 Correction: sudo date -s \"\$(curl -sI http://${DC_IP} | grep '^Date:' | sed 's/Date: //' | tr -d '\\r')\""
+            echo "   💡 Correction: ${fix_cmd}"
             log "WARNING" "Clock Skew hors tolérance: ${skew_abs_sec}s (max: ${max_skew_sec}s)"
         else
             print_success "Clock Skew acceptable: ${skew_abs_sec}s < ${max_skew_sec}s (limite Kerberos: ${max_skew}min)"
         fi
     else
-        print_warning "Impossible de mesurer le Clock Skew (curl et nmap sans résultat)"
-        print_info "💡 Correction manuelle si Kerberos échoue:"
-        print_info "   sudo date -s \"\$(curl -sI http://${DC_IP} | grep '^Date:' | sed 's/Date: //' | tr -d '\\r')\""
+        print_warning "Impossible de mesurer le Clock Skew (LDAP, curl et nmap sans résultat)"
+        echo "   💡 Correction manuelle si Kerberos echoue:"
+        echo "      ${fix_cmd}"
         log "WARNING" "Clock Skew non mesurable"
     fi
 
     stop_timer "connectivity"
 }
+
