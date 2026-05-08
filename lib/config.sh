@@ -98,7 +98,7 @@ check_requirements() {
     print_section "VÉRIFICATION DES PRÉREQUIS"
 
     local critical_tools=("nmap" "ldapsearch")
-    local optional_tools_list=("nxc:NetExec" "crackmapexec:CrackMapExec" "enum4linux-ng:Enum4Linux-NG" "bloodhound-python:BloodHound" "certipy:Certipy-AD" "gpg:GPG" "smbclient:SMBClient" "rpcdump.py:RPCDump" "dig:DNS-Dig" "dacledit.py:DACLEdit-Impacket")
+    local optional_tools_list=("nxc:NetExec" "crackmapexec:CrackMapExec" "enum4linux-ng:Enum4Linux-NG" "bloodhound-python:BloodHound" "certipy-ad:Certipy-AD" "gpg:GPG" "smbclient:SMBClient" "rpcdump.py:RPCDump" "dig:DNS-Dig" "dacledit.py:DACLEdit-Impacket")
 
     print_info "Vérification des outils critiques..."
     for tool in "${critical_tools[@]}"; do
@@ -125,7 +125,7 @@ check_requirements() {
                 crackmapexec)       HAS_CME=true ;;
                 enum4linux-ng)      HAS_ENUM4LINUX=true ;;
                 bloodhound-python)  HAS_BLOODHOUND=true ;;
-                certipy)            HAS_CERTIPY=true ;;
+                certipy-ad)         HAS_CERTIPY=true ;;
                 smbclient)          HAS_SMBCLIENT=true ;;
                 rpcdump.py)         HAS_RPCDUMP=true ;;
                 dig)                HAS_DIG=true ;;

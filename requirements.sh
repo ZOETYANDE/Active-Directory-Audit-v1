@@ -125,7 +125,7 @@ install_optional_tools() {
     fi
 
     # Certipy
-    if command -v certipy &>/dev/null; then
+    if command -v certipy-ad &>/dev/null; then
         print_success "Certipy: déjà installé"
     else
         pip install certipy-ad --break-system-packages -q 2>/dev/null && \
@@ -161,7 +161,7 @@ verify_tools() {
         "bloodhound-python:CRITIQUE"
         "nxc:OPTIONNEL"
         "crackmapexec:OPTIONNEL"
-        "certipy:OPTIONNEL"
+        "certipy-ad:OPTIONNEL"
         "enum4linux-ng:OPTIONNEL"
         "gpg:OPTIONNEL"
     )
