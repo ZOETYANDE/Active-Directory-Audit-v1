@@ -375,12 +375,29 @@ ldap_search() {
 
     throttle_request
 
+    # On ignore silencieusement les erreurs de certificats LDAPS
+    export LDAPTLS_REQCERT=never
+
     ldapsearch -x -H "${uri}" \
         -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
         -b "${search_base}" \
         -E pr=1000/noprompt \
         "${filter}" ${attrs} \
         > "${output_file}" 2>&1 || true
+
+    # Fallback automatique vers LDAPS si le serveur exige la signature LDAP (Strong(er) authentication required)
+    if grep -qi "Strong(er) authentication required" "${output_file}" 2>/dev/null; then
+        log "WARNING" "Signature LDAP requise détectée. Fallback automatique sur LDAPS (port 636)..."
+        LDAPS_MODE=true
+        uri=$(get_ldap_uri)
+        
+        ldapsearch -x -H "${uri}" \
+            -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
+            -b "${search_base}" \
+            -E pr=1000/noprompt \
+            "${filter}" ${attrs} \
+            > "${output_file}" 2>&1 || true
+    fi
 
     log_file_info "${output_file}" "LDAP query: ${filter}"
 }
