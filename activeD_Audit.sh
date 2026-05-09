@@ -327,6 +327,7 @@ main() {
 ╔═══════════════════════════════════════════════════════════════╗
 ║     🛡️  AUDIT DE SÉCURITÉ ACTIVE DIRECTORY — v1.0            ║
 ║     Enterprise AD Security Assessment Framework              ║
+║     Auteur / Développeur : ZOETYANDE MOHAMED                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
@@ -521,6 +522,8 @@ EOF
     echo -e "  ${YELLOW}⚠️  Avertissements: ${TESTS_WARNING}${NC}"
     echo -e "  ${RED}🔴 Échecs: ${TESTS_FAILED}${NC}"
     echo -e "  Findings: ${#FINDINGS_SEVERITY[@]}"
+    echo -e "${CYAN}───────────────────────────────────────────────────${NC}"
+    echo -e "  [ Développé par: ZOETYANDE MOHAMED ]"
     echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
     echo ""
 
