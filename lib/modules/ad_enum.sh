@@ -53,11 +53,21 @@ audit_ad_enum() {
     sed -i "s/${password}/[REDACTED]/g" "${output_dir}/05_shares.txt" 2>/dev/null || true
     print_success "Partages SMB exportés"
 
-    # Sessions actives
-    print_test "Récupération des sessions actives"
-    nxc smb "${DC_IP}" -u "${username}" -p "${password}" --sessions > "${output_dir}/06_sessions.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/06_sessions.txt" 2>/dev/null || true
-    print_success "Sessions exportées"
+    # Sessions actives (DC)
+    print_test "Récupération des sessions sur le DC"
+    nxc smb "${DC_IP}" -u "${username}" -p "${password}" --sessions > "${output_dir}/06_sessions_dc.txt" 2>&1
+    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/06_sessions_dc.txt" 2>/dev/null || true
+    print_success "Sessions du DC exportées"
+
+    # Mapping global des utilisateurs (Réseau)
+    if [ -n "${NETWORK:-}" ]; then
+        print_test "Cartographie des utilisateurs sur le réseau (${NETWORK})"
+        # --loggedon-users et --sessions sur tout le sous-réseau pour trouver qui est où
+        nxc smb "${NETWORK}" -u "${username}" -p "${password}" --loggedon-users > "${output_dir}/06_network_users_mapping.txt" 2>&1
+        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/06_network_users_mapping.txt" 2>/dev/null || true
+        print_success "Mapping réseau exporté"
+        add_finding "INFO" "Cartographie Utilisateurs/IP" "Le mapping des utilisateurs et de leurs adresses IP sur le réseau a été généré." "Voir fichier: 06_network_users_mapping.txt"
+    fi
 
     # Infos du domaine
     print_test "Récupération des infos du domaine"
