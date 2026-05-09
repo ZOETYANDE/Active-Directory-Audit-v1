@@ -423,7 +423,7 @@ EOF
         should_run_module "smb_unauth" && { show_progress "SMB Anonyme"; audit_smb_unauth; }
         should_run_module "dns" && { show_progress "Sécurité DNS"; audit_dns; }
     else
-        TOTAL_MODULES=20
+        TOTAL_MODULES=21
         CURRENT_MODULE=0
         # Get credentials
         if [ -z "$username" ]; then

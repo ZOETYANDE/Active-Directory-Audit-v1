@@ -58,6 +58,7 @@ audit_authenticated() {
         "vulns:audit_vulnerabilities:Vulnérabilités"
         "misc:audit_misc:Durcissement"
         "bloodhound:audit_bloodhound:BloodHound"
+        "ad_enum:audit_ad_enum:Énumération NXC"
     )
 
     for entry in "${auth_modules[@]}"; do
