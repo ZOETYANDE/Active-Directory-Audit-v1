@@ -356,6 +356,8 @@ domain_to_base_dn() {
 
 get_ldap_uri() {
     if [ "${LDAPS_MODE}" = true ]; then
+        # Pour LDAPS, utiliser le FQDN du domaine pour la validation du SNI/TLS du certificat Windows
+        # Si non résolvable, ldapsearch utilisera quand même l'IP via la connexion réseau
         echo "ldaps://${DC_IP}"
     else
         echo "ldap://${DC_IP}"
@@ -375,9 +377,6 @@ ldap_search() {
 
     throttle_request
 
-    # On ignore silencieusement les erreurs de certificats LDAPS
-    export LDAPTLS_REQCERT=never
-
     ldapsearch -x -H "${uri}" \
         -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
         -b "${search_base}" \
@@ -385,18 +384,38 @@ ldap_search() {
         "${filter}" ${attrs} \
         > "${output_file}" 2>&1 || true
 
-    # Fallback automatique vers LDAPS si le serveur exige la signature LDAP (Strong(er) authentication required)
+    # Fallback 1 : Signature LDAP requise (Strong(er) authentication required)
+    # Fallback 2 : Connexion TLS impossible via IP → on force LDAPS via le FQDN du domaine
+    local needs_ldaps=false
     if grep -qi "Strong(er) authentication required" "${output_file}" 2>/dev/null; then
-        log "WARNING" "Signature LDAP requise détectée. Fallback automatique sur LDAPS (port 636)..."
+        log "WARNING" "Signature LDAP requise — Fallback LDAPS (port 636, IP)..."
+        needs_ldaps=true
+    elif grep -qi "Can't contact LDAP server" "${output_file}" 2>/dev/null && [ "${LDAPS_MODE}" = true ]; then
+        log "WARNING" "Connexion LDAPS via IP échouée — Fallback LDAPS via FQDN (${DOMAIN})..."
+        needs_ldaps=true
+    fi
+
+    if [ "${needs_ldaps}" = true ]; then
         LDAPS_MODE=true
-        uri=$(get_ldap_uri)
-        
-        ldapsearch -x -H "${uri}" \
+        # Essai 1 : LDAPS via IP
+        LDAPTLS_REQCERT=never ldapsearch -x -H "ldaps://${DC_IP}" \
             -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
             -b "${search_base}" \
             -E pr=1000/noprompt \
             "${filter}" ${attrs} \
             > "${output_file}" 2>&1 || true
+
+        # Essai 2 : si toujours en échec via IP, essayer via FQDN (nécessite /etc/hosts ou DNS fonctionnel)
+        # On vérifie uniquement les erreurs OpenLDAP spécifiques (pas "error:" qui est trop générique)
+        if grep -qi "Can't contact LDAP server\|ldap_bind: Can't contact\|TLS handshake failure\|SSL_connect" "${output_file}" 2>/dev/null; then
+            log "WARNING" "Connexion LDAPS via IP toujours en échec — tentative via FQDN (${DOMAIN})..."
+            LDAPTLS_REQCERT=never ldapsearch -x -H "ldaps://${DOMAIN}" \
+                -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
+                -b "${search_base}" \
+                -E pr=1000/noprompt \
+                "${filter}" ${attrs} \
+                > "${output_file}" 2>&1 || true
+        fi
     fi
 
     log_file_info "${output_file}" "LDAP query: ${filter}"

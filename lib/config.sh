@@ -181,6 +181,12 @@ setup_environment() {
         log "INFO" "Base DN: ${BASE_DN}"
     fi
 
+    # Force la désactivation de la vérification du certificat TLS pour toute la session
+    # Nécessaire pour les connexions LDAPS avec un certificat auto-signé Windows
+    echo "TLS_REQCERT never" > ~/.ldaprc
+    export LDAPTLS_REQCERT=never
+    log "INFO" "OpenLDAP TLS: vérification de certificat désactivée pour la session"
+
     print_section "PRÉPARATION DE L'ENVIRONNEMENT"
     print_info "Structure créée: ${OUTPUT_DIR} (mode 700)"
     print_info "Base DN: ${BASE_DN}"
