@@ -11,7 +11,7 @@ audit_ldap_unauth() {
 
     print_test "Énumération LDAP anonyme"
     ldapsearch -x -H "${uri}" -b "${BASE_DN}" \
-        "(objectclass=user)" sAMAccountName \
+        "(objectClass=user)" sAMAccountName \
         > "${output_dir}/ldap_anon.txt" 2>&1 || true
 
     local user_count

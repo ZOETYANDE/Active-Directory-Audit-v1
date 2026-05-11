@@ -356,11 +356,9 @@ domain_to_base_dn() {
 
 get_ldap_uri() {
     if [ "${LDAPS_MODE}" = true ]; then
-        # Pour LDAPS, utiliser le FQDN du domaine pour la validation du SNI/TLS du certificat Windows
-        # Si non résolvable, ldapsearch utilisera quand même l'IP via la connexion réseau
-        echo "ldaps://${DC_IP}"
+        echo "ldaps://${DC_IP}:636"
     else
-        echo "ldap://${DC_IP}"
+        echo "ldap://${DC_IP}:389"
     fi
 }
 
@@ -370,95 +368,123 @@ ldap_search() {
     local filter="$3"
     local attrs="$4"
     local output_file="$5"
-    local search_base="${6:-${BASE_DN}}"  # Base de recherche personnalisable (optionnel)
-
-    local uri
-    uri=$(get_ldap_uri)
-
-    throttle_request
-
-    ldapsearch -x -H "${uri}" \
-        -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
-        -b "${search_base}" \
-        -E pr=1000/noprompt \
-        "${filter}" ${attrs} \
-        > "${output_file}" 2>&1 || true
-
-    # Fallback 1 : Signature LDAP requise (Strong(er) authentication required)
-    # Fallback 2 : Connexion TLS impossible via IP → on force LDAPS via le FQDN du domaine
-    local needs_ldaps=false
-    if grep -qi "Strong(er) authentication required" "${output_file}" 2>/dev/null; then
-        log "WARNING" "Signature LDAP requise — Fallback LDAPS (port 636, IP)..."
-        needs_ldaps=true
-    elif grep -qi "Can't contact LDAP server" "${output_file}" 2>/dev/null && [ "${LDAPS_MODE}" = true ]; then
-        log "WARNING" "Connexion LDAPS via IP échouée — Fallback LDAPS via FQDN (${DOMAIN})..."
-        needs_ldaps=true
-    fi
-
-    if [ "${needs_ldaps}" = true ]; then
-        LDAPS_MODE=true
-        # Essai 1 : LDAPS via IP
-        LDAPTLS_REQCERT=never ldapsearch -x -H "ldaps://${DC_IP}" \
-            -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
-            -b "${search_base}" \
-            -E pr=1000/noprompt \
-            "${filter}" ${attrs} \
-            > "${output_file}" 2>&1 || true
-
-        # Essai 2 : si toujours en échec via IP, essayer via FQDN (nécessite /etc/hosts ou DNS fonctionnel)
-        # On vérifie uniquement les erreurs OpenLDAP spécifiques (pas "error:" qui est trop générique)
-        if grep -qi "Can't contact LDAP server\|ldap_bind: Can't contact\|TLS handshake failure\|SSL_connect" "${output_file}" 2>/dev/null; then
-            log "WARNING" "Connexion LDAPS via IP toujours en échec — tentative via FQDN (${DOMAIN})..."
-            LDAPTLS_REQCERT=never ldapsearch -x -H "ldaps://${DOMAIN}" \
-                -D "${bind_user}@${DOMAIN}" -y "${pwd_file}" \
-                -b "${search_base}" \
-                -E pr=1000/noprompt \
-                "${filter}" ${attrs} \
-                > "${output_file}" 2>&1 || true
-        fi
-    fi
-
-    log_file_info "${output_file}" "LDAP query: ${filter}"
-}
-
-smb_tool_exec() {
-    if [ "${HAS_NXC}" = true ]; then
-        nxc smb "$@"
-    elif [ "${HAS_CME}" = true ]; then
-        crackmapexec smb "$@"
-    else
-        log "WARNING" "No SMB tool available (nxc/crackmapexec)"
+    local search_base="${6:-${BASE_DN}}"
+    
+    # === VALIDATIONS ===
+    if [ -z "${bind_user}" ] || [ -z "${pwd_file}" ] || [ -z "${filter}" ]; then
+        log "ERROR" "ldap_search: paramètres manquants (user, pwd_file ou filter)"
         return 1
     fi
-}
-
-show_progress() {
-    local module_name="$1"
-    ((CURRENT_MODULE++)) || true
-    local pct=$((CURRENT_MODULE * 100 / TOTAL_MODULES))
-    local filled=$((pct / 5))
-    local empty=$((20 - filled))
-    local bar=""
-    local i
-    for ((i=0; i<filled; i++)); do bar+="█"; done
-    for ((i=0; i<empty; i++)); do bar+="░"; done
-    local start_time=${PERF_TIMERS[total_start]:-0}
-    local elapsed=0
-    if [ "${start_time}" -gt 0 ]; then
-        elapsed=$(( $(date +%s) - start_time ))
+    
+    if [ ! -f "${pwd_file}" ]; then
+        log "ERROR" "ldap_search: fichier mot de passe introuvable: ${pwd_file}"
+        return 1
     fi
-    printf "\r${CYAN}[${bar}] %3d%% │ %d/%d: %s │ %ds${NC}        " \
-        "$pct" "$CURRENT_MODULE" "$TOTAL_MODULES" "$module_name" "$elapsed" >&2
-    echo "" >&2
-}
-
-should_run_module() {
-    local module="$1"
-    if [ -n "${SELECTED_MODULES}" ]; then
-        echo ",${SELECTED_MODULES}," | grep -q ",${module}," && return 0 || return 1
+    
+    if [ -z "${search_base}" ]; then
+        log "ERROR" "ldap_search: BASE_DN non défini"
+        return 1
     fi
-    if [ -n "${SKIP_MODULES}" ]; then
-        echo ",${SKIP_MODULES}," | grep -q ",${module}," && return 1 || return 0
+    
+    if [ -z "${DOMAIN}" ] || [ -z "${DC_IP}" ]; then
+        log "ERROR" "ldap_search: DOMAIN ou DC_IP non définis"
+        return 1
     fi
-    return 0
+ 
+    local uri
+    uri=$(get_ldap_uri)
+    
+    throttle_request
+ 
+    # === TENTATIVE 1: LDAP simple (ou LDAPS si déjà activé) ===
+    log "INFO" "Recherche LDAP: ${bind_user}@${DOMAIN} | URI: ${uri} | Base: ${search_base}"
+    
+    ldapsearch -x \
+        -H "${uri}" \
+        -D "${bind_user}@${DOMAIN}" \
+        -y "${pwd_file}" \
+        -b "${search_base}" \
+        -E pr=1000/noprompt \
+        -l 10 \
+        "${filter}" ${attrs} \
+        > "${output_file}" 2>&1 || true
+    
+    # === VÉRIFIER SI C'EST UN SUCCÈS ===
+    if grep -qi "^dn:" "${output_file}" 2>/dev/null; then
+        # ✓ SUCCÈS à la première tentative
+        log_file_info "${output_file}" "LDAP query: ${filter}"
+        return 0
+    fi
+    
+    # === ANALYSE DES ERREURS ===
+    local error_msg=""
+    
+    if grep -qi "Strong(er) authentication required" "${output_file}" 2>/dev/null; then
+        error_msg="STRONG_AUTH_REQUIRED"
+        log "WARNING" "Erreur: Signature LDAP requise — Fallback LDAPS..."
+    elif grep -qi "Can't contact LDAP server\|Connection refused\|Couldn't open connection" "${output_file}" 2>/dev/null; then
+        error_msg="CANT_CONTACT"
+        log "WARNING" "Erreur: Impossible de contacter le serveur LDAP — Tentative LDAPS..."
+    elif grep -qi "TLS handshake\|SSL_connect\|tlsv1 alert\|certificate verify failed" "${output_file}" 2>/dev/null; then
+        error_msg="TLS_FAILURE"
+        log "WARNING" "Erreur: Échec TLS — Tentative avec LDAPTLS_REQCERT=never..."
+    elif grep -qi "Invalid DN syntax\|Invalid credentials\|authentication failed" "${output_file}" 2>/dev/null; then
+        log "ERROR" "Erreur: Authentification échouée (vérifiez utilisateur/mot de passe)"
+        log_file_info "${output_file}" "Erreur LDAP"
+        return 1
+    fi
+ 
+    # === FALLBACK 1: LDAPS via IP avec port 636 ===
+    if [ -n "${error_msg}" ]; then
+        log "INFO" "Fallback 1: Tentative LDAPS via IP (port 636)..."
+        
+        LDAPTLS_REQCERT=never ldapsearch -x \
+            -H "ldaps://${DC_IP}:636" \
+            -D "${bind_user}@${DOMAIN}" \
+            -y "${pwd_file}" \
+            -b "${search_base}" \
+            -E pr=1000/noprompt \
+            -l 10 \
+            "${filter}" ${attrs} \
+            > "${output_file}" 2>&1 || true
+        
+        # Vérifier si le fallback a marché
+        if grep -qi "^dn:" "${output_file}" 2>/dev/null; then
+            log "SUCCESS" "Fallback 1 réussi (LDAPS/IP)!"
+            log_file_info "${output_file}" "LDAP query (via LDAPS): ${filter}"
+            return 0  # ✓ SUCCÈS - retour immédiat
+        fi
+        
+        # === FALLBACK 2: LDAPS via FQDN du domaine ===
+        if grep -qi "Can't contact\|TLS handshake\|SSL_connect" "${output_file}" 2>/dev/null; then
+            log "INFO" "Fallback 2: Tentative LDAPS via FQDN (${DOMAIN}:636)..."
+            
+            LDAPTLS_REQCERT=never ldapsearch -x \
+                -H "ldaps://${DOMAIN}:636" \
+                -D "${bind_user}@${DOMAIN}" \
+                -y "${pwd_file}" \
+                -b "${search_base}" \
+                -E pr=1000/noprompt \
+                -l 10 \
+                "${filter}" ${attrs} \
+                > "${output_file}" 2>&1 || true
+            
+            # Vérifier si ce fallback a marché
+            if grep -qi "^dn:" "${output_file}" 2>/dev/null; then
+                log "SUCCESS" "Fallback 2 réussi (LDAPS/FQDN)!"
+                log_file_info "${output_file}" "LDAP query (via LDAPS/FQDN): ${filter}"
+                return 0  # ✓ SUCCÈS - retour immédiat
+            fi
+        fi
+        
+        # === TOUS LES FALLBACKS ONT ÉCHOUÉ ===
+        log "ERROR" "Tous les fallbacks LDAP ont échoué"
+        log_file_info "${output_file}" "LDAP query FAILED (tous les fallbacks échoués): ${filter}"
+        return 1  # ✗ ÉCHEC
+    fi
+ 
+    # Si on arrive ici, on n'a pas d'erreur détectée mais pas de résultats non plus
+    log "WARNING" "Requête LDAP sans résultats et sans erreur détectable"
+    log_file_info "${output_file}" "LDAP query: ${filter}"
+    return 0  # Retourner 0 car la requête s'est exécutée (même sans résultats)
 }
