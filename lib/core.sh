@@ -488,3 +488,45 @@ ldap_search() {
     log_file_info "${output_file}" "LDAP query: ${filter}"
     return 0  # Retourner 0 car la requête s'est exécutée (même sans résultats)
 }
+
+smb_tool_exec() {
+    if [ "${HAS_NXC}" = true ]; then
+        nxc smb "$@"
+    elif [ "${HAS_CME}" = true ]; then
+        crackmapexec smb "$@"
+    else
+        log "WARNING" "No SMB tool available (nxc/crackmapexec)"
+        return 1
+    fi
+}
+
+show_progress() {
+    local module_name="$1"
+    ((CURRENT_MODULE++)) || true
+    local pct=$((CURRENT_MODULE * 100 / TOTAL_MODULES))
+    local filled=$((pct / 5))
+    local empty=$((20 - filled))
+    local bar=""
+    local i
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+    local start_time=${PERF_TIMERS[total_start]:-0}
+    local elapsed=0
+    if [ "${start_time}" -gt 0 ]; then
+        elapsed=$(( $(date +%s) - start_time ))
+    fi
+    printf "\r${CYAN}[${bar}] %3d%% │ %d/%d: %s │ %ds${NC}        " \
+        "$pct" "$CURRENT_MODULE" "$TOTAL_MODULES" "$module_name" "$elapsed" >&2
+    echo "" >&2
+}
+
+should_run_module() {
+    local module="$1"
+    if [ -n "${SELECTED_MODULES}" ]; then
+        echo ",${SELECTED_MODULES}," | grep -q ",${module}," && return 0 || return 1
+    fi
+    if [ -n "${SKIP_MODULES}" ]; then
+        echo ",${SKIP_MODULES}," | grep -q ",${module}," && return 1 || return 0
+    fi
+    return 0
+}
