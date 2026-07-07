@@ -77,6 +77,10 @@ declare -a FINDINGS_EVIDENCE=()
 # Performance
 declare -A PERF_TIMERS
 
+# Failed LDAP queries (connection/auth failure, not "0 legitimate results") —
+# lets us warn instead of silently reporting a clean audit when LDAP was unreachable.
+declare -i LDAP_QUERY_FAILURES=0
+
 # Modes
 DEBUG_MODE=false
 VERBOSE_MODE=false
@@ -446,9 +450,11 @@ EOF
 
         # Priorité 1: Validation via SMB (NetExec/CME) car NTLM gère mieux les formats de noms d'utilisateurs
         if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
-            smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
+            # "@${pwd_file}" : nxc/CME lisent le mot de passe depuis le fichier
+            # (mode 600) au lieu de l'exposer en clair dans la ligne de commande (ps aux).
+            smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" \
                 > "${OUTPUT_DIR}/cred_test.txt" 2>&1 || true
-            
+
             if grep -qiE "STATUS_LOGON_FAILURE|Logon failure" "${OUTPUT_DIR}/cred_test.txt"; then
                 print_error "🔴 Identifiants invalides (Vérifié via SMB): Mot de passe incorrect ou compte verrouillé."
                 exit 1
@@ -459,13 +465,14 @@ EOF
                 print_warning "Réponse SMB inattendue, on laisse le bénéfice du doute..."
                 auth_success=true
             fi
-            
-            sed -i "s|${password}|[REDACTED]|g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+
+            redact_secret "${password}" "${OUTPUT_DIR}/cred_test.txt"
 
         # Priorité 2: Validation via LDAP si SMB n'est pas disponible
         elif command_exists "ldapsearch"; then
-            # On tente le Bind UPN (user@domain)
-            if ldapsearch -x -H "ldap://${DC_IP}" -D "${username}@${DOMAIN}" -w "${password}" -b "" -s base 2>&1 | grep -qi "Invalid credentials"; then
+            # -y "${pwd_file}" : lit le mot de passe depuis le fichier sécurisé
+            # au lieu de -w en clair (visible via ps aux le temps de l'appel).
+            if ldapsearch -x -H "ldap://${DC_IP}" -D "${username}@${DOMAIN}" -y "${pwd_file}" -b "" -s base 2>&1 | grep -qi "Invalid credentials"; then
                 print_error "🔴 Identifiants invalides (Vérifié via LDAP): Mot de passe incorrect."
                 exit 1
             else
@@ -488,6 +495,16 @@ EOF
     # Validation
     local total_results=$((TESTS_PASSED + TESTS_FAILED + TESTS_WARNING))
     [ ${TESTS_TOTAL} -ne ${total_results} ] && TESTS_TOTAL=${total_results}
+
+    # Si des requêtes LDAP ont échoué (signing, réseau, credentials...), le
+    # remonter explicitement : sans ça, un module qui n'a rien pu interroger
+    # rapporte "0 trouvé" — indiscernable d'un résultat propre.
+    if [ "${LDAP_QUERY_FAILURES}" -gt 0 ]; then
+        print_error "⚠️  ${LDAP_QUERY_FAILURES} requête(s) LDAP ont échoué pendant l'audit — certains résultats 'propres' peuvent être des faux négatifs."
+        add_finding "HIGH" "Requêtes LDAP Échouées" \
+            "${LDAP_QUERY_FAILURES} requête(s) LDAP authentifiée(s) n'ont pas pu être exécutées (connexion refusée, signing requis, ou authentification échouée). Les modules concernés ont pu rapporter '0 trouvé' alors que la requête n'a en réalité jamais abouti. Consultez audit_execution.log pour identifier les requêtes en échec, corrigez la cause (LDAPS, identifiants, connectivité) et relancez l'audit." \
+            "${LOG_FILE}"
+    fi
 
     # Reports
     generate_security_summary

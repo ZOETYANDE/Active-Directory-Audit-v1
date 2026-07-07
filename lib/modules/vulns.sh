@@ -20,9 +20,9 @@ audit_vulnerabilities() {
     # Print Spooler (PrintNightmare)
     if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
         print_test "Print Spooler / PrintNightmare (CVE-2021-34527)"
-        smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" -M spooler \
+        smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" -M spooler \
             > "${output_dir}/spooler.txt" 2>&1 || true
-        sed -i "s|${password}|[REDACTED]|g" "${output_dir}/spooler.txt" 2>/dev/null || true
+        redact_secret "${password}" "${output_dir}/spooler.txt"
 
         if grep -qi "Spooler service is running" "${output_dir}/spooler.txt" 2>/dev/null; then
             print_error "🔴 Print Spooler actif sur le DC!"
@@ -40,9 +40,9 @@ audit_vulnerabilities() {
         else
             # Coercion Attacks
             print_test "Attaques de Coercition NTLM (via coerce_plus)"
-            smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" -M coerce_plus \
+            smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" -M coerce_plus \
                 > "${output_dir}/coercion.txt" 2>&1 || true
-            sed -i "s|${password}|[REDACTED]|g" "${output_dir}/coercion.txt" 2>/dev/null || true
+            redact_secret "${password}" "${output_dir}/coercion.txt"
 
             if grep -qi "VULNERABLE" "${output_dir}/coercion.txt" 2>/dev/null; then
                 local vulns_found
@@ -58,9 +58,9 @@ audit_vulnerabilities() {
 
             # ZeroLogon
             print_test "ZeroLogon (CVE-2020-1472)"
-            smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" -M zerologon \
+            smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" -M zerologon \
                 > "${output_dir}/zerologon.txt" 2>&1 || true
-            sed -i "s|${password}|[REDACTED]|g" "${output_dir}/zerologon.txt" 2>/dev/null || true
+            redact_secret "${password}" "${output_dir}/zerologon.txt"
 
             if grep -qiE "VULNERABLE|vuln" "${output_dir}/zerologon.txt" 2>/dev/null; then
                 print_error "🔴 VULNÉRABLE À ZEROLOGON!"
@@ -73,9 +73,9 @@ audit_vulnerabilities() {
 
             # noPac
             print_test "noPac / sAMAccountName spoofing (CVE-2021-42278)"
-            smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" -M nopac \
+            smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" -M nopac \
                 > "${output_dir}/nopac.txt" 2>&1 || true
-            sed -i "s|${password}|[REDACTED]|g" "${output_dir}/nopac.txt" 2>/dev/null || true
+            redact_secret "${password}" "${output_dir}/nopac.txt"
 
             if grep -qiE "VULNERABLE|vuln" "${output_dir}/nopac.txt" 2>/dev/null; then
                 print_error "🔴 Vulnérable à noPac!"

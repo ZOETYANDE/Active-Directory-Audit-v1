@@ -153,6 +153,11 @@ audit_bloodhound() {
 
     cd "${original_dir}" || true
 
+    # bloodhound-python n'a pas d'option "mot de passe depuis fichier" documentée ;
+    # -p reste en clair sur la ligne de commande (visible via ps aux le temps de
+    # l'appel). On redacte au moins la sortie/log capturés en défense en profondeur.
+    redact_secret "${password}" "${output_dir}/bloodhound_output.log"
+
     if [ ${json_count} -gt 0 ] || [ ${zip_count} -gt 0 ]; then
         print_success "✅ ${json_count} JSON + ${zip_count} ZIP créés"
         add_finding "INFO" "BloodHound Collecté" "${json_count} fichiers JSON et ${zip_count} archives ZIP générés (collection: ${BH_COLLECTION})." "${output_dir}"

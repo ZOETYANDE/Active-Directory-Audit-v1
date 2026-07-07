@@ -14,6 +14,8 @@ audit_ad_enum() {
 
     local password
     password=$(<"${pwd_file}")
+    # nxc lit le mot de passe via "@${pwd_file}" (fichier 600) plutôt qu'en
+    # argument de ligne de commande (visible via ps aux le temps de l'appel).
 
     if [ "${HAS_NXC}" != true ]; then
         print_error "NetExec (nxc) n'est pas disponible. Énumération annulée."
@@ -27,45 +29,45 @@ audit_ad_enum() {
     # 01 — Politique de mot de passe (SMB, fonctionne en lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Politique de mot de passe"
-    nxc smb "${DC_IP}" -u "${username}" -p "${password}" --pass-pol \
+    nxc smb "${DC_IP}" -u "${username}" -p "@${pwd_file}" --pass-pol \
         > "${output_dir}/01_password_policy.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/01_password_policy.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/01_password_policy.txt"
     print_success "Politique de mot de passe exportée"
 
     # ─────────────────────────────────────────────────────────────────
     # 02 — Liste des utilisateurs (LDAP, fonctionne en lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Énumération des utilisateurs"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --users \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --users \
         > "${output_dir}/02_users.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/02_users.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/02_users.txt"
     print_success "Utilisateurs exportés"
 
     # ─────────────────────────────────────────────────────────────────
     # 03 — Liste des groupes (LDAP, fonctionne en lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Énumération des groupes"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --groups \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --groups \
         > "${output_dir}/03_groups.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/03_groups.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/03_groups.txt"
     print_success "Groupes exportés"
 
     # ─────────────────────────────────────────────────────────────────
     # 04 — Liste des ordinateurs (LDAP, fonctionne en lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Énumération des ordinateurs"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --computers \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --computers \
         > "${output_dir}/04_computers.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/04_computers.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/04_computers.txt"
     print_success "Ordinateurs exportés"
 
     # ─────────────────────────────────────────────────────────────────
     # 05 — Partages SMB accessibles (SMB, fonctionne en lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Partages SMB accessibles"
-    nxc smb "${DC_IP}" -u "${username}" -p "${password}" --shares \
+    nxc smb "${DC_IP}" -u "${username}" -p "@${pwd_file}" --shares \
         > "${output_dir}/05_shares.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/05_shares.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/05_shares.txt"
     print_success "Partages SMB exportés"
 
     # ─────────────────────────────────────────────────────────────────
@@ -73,9 +75,9 @@ audit_ad_enum() {
     # (LDAP, fonctionne en lecture — très utile pour l'audit)
     # ─────────────────────────────────────────────────────────────────
     print_test "Descriptions utilisateurs (recherche de mots de passe)"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --user-desc \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --user-desc \
         > "${output_dir}/06_user_descriptions.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/06_user_descriptions.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/06_user_descriptions.txt"
     local desc_count
     desc_count=$(grep -c "Description:" "${output_dir}/06_user_descriptions.txt" 2>/dev/null || echo "0")
     if [ "${desc_count}" -gt 0 ]; then
@@ -90,9 +92,9 @@ audit_ad_enum() {
     # (LDAP, fonctionne en lecture — trouvaille critique)
     # ─────────────────────────────────────────────────────────────────
     print_test "Comptes vulnérables AS-REP Roasting (nxc)"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --asreproast \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --asreproast \
         "${output_dir}/07_asrep_hashes.txt" > "${output_dir}/07_asrep_results.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/07_asrep_results.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/07_asrep_results.txt"
 
     if [ -s "${output_dir}/07_asrep_hashes.txt" ]; then
         local asrep_count
@@ -110,9 +112,9 @@ audit_ad_enum() {
     # 08 — Comptes Kerberoastables (SPN) (LDAP, fonctionne en lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Comptes Kerberoastables (SPN)"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --kerberoasting \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --kerberoasting \
         "${output_dir}/08_kerberoast_hashes.txt" > "${output_dir}/08_kerberoast_results.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/08_kerberoast_results.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/08_kerberoast_results.txt"
 
     if [ -s "${output_dir}/08_kerberoast_hashes.txt" ]; then
         local kerb_count
@@ -130,9 +132,9 @@ audit_ad_enum() {
     # 09 — Comptes sans mot de passe requis (LDAP, lecture)
     # ─────────────────────────────────────────────────────────────────
     print_test "Comptes sans mot de passe requis"
-    nxc ldap "${DC_IP}" -u "${username}" -p "${password}" --password-not-required \
+    nxc ldap "${DC_IP}" -u "${username}" -p "@${pwd_file}" --password-not-required \
         > "${output_dir}/09_no_password_required.txt" 2>&1
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}/09_no_password_required.txt" 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}/09_no_password_required.txt"
 
     local nopwd_count
     nopwd_count=$(grep -c "Username:" "${output_dir}/09_no_password_required.txt" 2>/dev/null || echo "0")

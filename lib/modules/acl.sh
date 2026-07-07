@@ -82,7 +82,7 @@ audit_acl_abuse() {
                 -dc-ip "${DC_IP}" \
                 "${DOMAIN}/${username}:${password}" \
                 > "${outfile}" 2>&1 || true
-            sed -i "s/${password}/[REDACTED]/g" "${outfile}" 2>/dev/null || true
+            redact_secret "${password}" "${outfile}"
 
             local abuse_count
             abuse_count=$(grep -cE "GenericAll|GenericWrite|WriteDacl|WriteOwner|AllExtendedRights" \
@@ -123,7 +123,7 @@ audit_acl_abuse() {
     #---------------------------------------------------------------------------
     print_info "💡 Analyse ACL graphique complète disponible via BloodHound (section 09_BloodHound)"
 
-    sed -i "s/${password}/[REDACTED]/g" "${output_dir}"/*.txt 2>/dev/null || true
+    redact_secret "${password}" "${output_dir}"/*.txt
 
     stop_timer "acl"
 }

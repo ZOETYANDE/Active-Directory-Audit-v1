@@ -49,6 +49,7 @@ audit_adcs() {
             certipy-ad find -u "${username}@${DOMAIN}" -p "${password}" \
                 -dc-ip "${DC_IP}" -vulnerable -stdout \
                 > "${output_dir}/certipy_vulnerable.txt" 2>&1 || true
+            redact_secret "${password}" "${output_dir}/certipy_vulnerable.txt"
 
             if grep -qi "ESC" "${output_dir}/certipy_vulnerable.txt" 2>/dev/null; then
                 local esc_findings

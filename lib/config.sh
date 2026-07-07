@@ -105,7 +105,13 @@ check_requirements() {
         print_test "Disponibilité de ${tool}"
         if command_exists "$tool"; then
             local version
-            version=$(${tool} --version 2>&1 | head -n1 || echo "version inconnue")
+            case "${tool}" in
+                # ldapsearch (OpenLDAP) n'a pas de --version ; -V (sans argument)
+                # sort la version sur stderr et quitte en erreur — c'est attendu.
+                ldapsearch) version=$(ldapsearch -V 2>&1 | head -n1) ;;
+                *)          version=$(${tool} --version 2>&1 | head -n1) ;;
+            esac
+            [ -z "${version}" ] && version="version inconnue"
             print_success "${tool} disponible (${version})"
         else
             print_error "${tool} MANQUANT (critique)"
@@ -182,10 +188,13 @@ setup_environment() {
     fi
 
     # Force la désactivation de la vérification du certificat TLS pour toute la session
-    # Nécessaire pour les connexions LDAPS avec un certificat auto-signé Windows
-    echo "TLS_REQCERT never" > ~/.ldaprc
+    # Nécessaire pour les connexions LDAPS avec un certificat auto-signé Windows.
+    # LDAPTLS_REQCERT est lu directement par libldap (equivalent a TLS_REQCERT dans
+    # ldap.conf/.ldaprc) et ne s'applique qu'a ce process et ses enfants — on evite
+    # ainsi d'ecraser durablement le ~/.ldaprc de l'operateur pour toutes ses futures
+    # sessions ldapsearch, sur cette machine, meme en dehors de cet audit.
     export LDAPTLS_REQCERT=never
-    log "INFO" "OpenLDAP TLS: vérification de certificat désactivée pour la session"
+    log "INFO" "OpenLDAP TLS: vérification de certificat désactivée (env, scope: cette session)"
 
     print_section "PRÉPARATION DE L'ENVIRONNEMENT"
     print_info "Structure créée: ${OUTPUT_DIR} (mode 700)"
@@ -311,7 +320,16 @@ test_connectivity() {
                 read -r sync_choice
                 if [[ "${sync_choice}" =~ ^[Oo]$ ]]; then
                     print_info "Synchronisation en cours..."
-                    eval "${fix_cmd}" && print_success "Heure synchronisée avec succès !" || print_error "Échec de la synchronisation (droits sudo ?)"
+                    # Exécution directe (pas d'eval) : le Date header du DC n'est
+                    # jamais reparsé comme du shell, seulement passé en argument littéral.
+                    local dc_date
+                    dc_date=$(curl -sI --connect-timeout 3 --max-time 5 "http://${DC_IP}" 2>/dev/null | \
+                        grep -i "^Date:" | head -1 | sed 's/[Dd]ate: //' | tr -d '\r')
+                    if [ -n "${dc_date}" ] && sudo date -s "${dc_date}"; then
+                        print_success "Heure synchronisée avec succès !"
+                    else
+                        print_error "Échec de la synchronisation (droits sudo ou DC injoignable en HTTP ?)"
+                    fi
                 else
                     echo "   💡 Pour corriger manuellement: ${fix_cmd}"
                 fi

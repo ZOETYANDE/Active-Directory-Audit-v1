@@ -31,12 +31,13 @@ audit_gpo() {
     password=$(<"${pwd_file}")
 
     if [ "${HAS_NXC}" = true ]; then
-        nxc smb "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
+        nxc smb "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" \
             -M gpp_password > "${output_dir}/gpp_passwords.txt" 2>&1 || true
     elif [ "${HAS_CME}" = true ]; then
-        crackmapexec smb "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
+        crackmapexec smb "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" \
             -M gpp_password > "${output_dir}/gpp_passwords.txt" 2>&1 || true
     fi
+    redact_secret "${password}" "${output_dir}/gpp_passwords.txt"
 
     if [ -f "${output_dir}/gpp_passwords.txt" ] && grep -qiE "\[\+\].*gpp|cpassword" "${output_dir}/gpp_passwords.txt" 2>/dev/null; then
         print_error "🔴 Mots de passe GPP trouvés!"

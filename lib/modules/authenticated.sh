@@ -18,15 +18,15 @@ audit_authenticated() {
         # Déjà validé par le check fail-fast dans main() — on fait confiance
         print_success "Identifiants valides (pré-validés)"
     elif [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
-        smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" \
+        smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" \
             > "${OUTPUT_DIR}/cred_test.txt" 2>&1
 
         if grep -qE "\[\+\]" "${OUTPUT_DIR}/cred_test.txt"; then
             print_success "Identifiants valides"
-            sed -i "s|${password}|[REDACTED]|g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+            redact_secret "${password}" "${OUTPUT_DIR}/cred_test.txt"
         else
             print_error "Identifiants invalides"
-            sed -i "s|${password}|[REDACTED]|g" "${OUTPUT_DIR}/cred_test.txt" 2>/dev/null || true
+            redact_secret "${password}" "${OUTPUT_DIR}/cred_test.txt"
             stop_timer "authenticated"
             return 1
         fi

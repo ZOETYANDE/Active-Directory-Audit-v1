@@ -261,10 +261,36 @@ secure_password_prompt() {
 
 cleanup_password() {
     if [ -f "${PASSWORD_FILE}" ]; then
-        dd if=/dev/urandom of="${PASSWORD_FILE}" bs=1 count=100 2>/dev/null || true
+        local sz
+        sz=$(stat -c%s "${PASSWORD_FILE}" 2>/dev/null || echo 100)
+        dd if=/dev/urandom of="${PASSWORD_FILE}" bs=1 count="${sz}" conv=notrunc 2>/dev/null || true
         rm -f "${PASSWORD_FILE}"
         log "INFO" "Fichier de mot de passe supprimé de manière sécurisée"
     fi
+}
+
+#===============================================================================
+# SECRET REDACTION (safe against sed-delimiter / regex-metacharacter collisions)
+#===============================================================================
+
+# Redacts a literal secret from one or more files. Uses bash's own pattern
+# matching with a *quoted* pattern, which forces a literal (non-glob) match —
+# unlike `sed -i "s/${secret}/x/"`, this can't break or silently fail when the
+# secret itself contains '/', '|', '&', or other delimiter/regex metacharacters.
+redact_secret() {
+    local secret="$1"
+    shift
+    [ -z "${secret}" ] && return 0
+
+    local file
+    for file in "$@"; do
+        [ -f "${file}" ] || continue
+        local content
+        content=$(<"${file}")
+        [[ "${content}" == *"${secret}"* ]] || continue
+        content="${content//"${secret}"/[REDACTED]}"
+        printf '%s\n' "${content}" > "${file}"
+    done
 }
 
 #===============================================================================
@@ -431,6 +457,8 @@ ldap_search() {
     elif grep -qi "Invalid DN syntax\|Invalid credentials\|authentication failed" "${output_file}" 2>/dev/null; then
         log "ERROR" "Erreur: Authentification échouée (vérifiez utilisateur/mot de passe)"
         log_file_info "${output_file}" "Erreur LDAP"
+        LDAP_QUERY_FAILURES=$(( ${LDAP_QUERY_FAILURES:-0} + 1 ))
+        echo "# AUDIT_QUERY_FAILED: authentification LDAP refusée (voir audit_execution.log)" > "${output_file}"
         return 1
     fi
  
@@ -480,6 +508,10 @@ ldap_search() {
         # === TOUS LES FALLBACKS ONT ÉCHOUÉ ===
         log "ERROR" "Tous les fallbacks LDAP ont échoué"
         log_file_info "${output_file}" "LDAP query FAILED (tous les fallbacks échoués): ${filter}"
+        LDAP_QUERY_FAILURES=$(( ${LDAP_QUERY_FAILURES:-0} + 1 ))
+        # Marqueur explicite : distingue "requête échouée" de "0 résultat légitime"
+        # pour que safe_count/les modules ne rapportent pas un faux négatif "propre".
+        echo "# AUDIT_QUERY_FAILED: connexion LDAP impossible (voir audit_execution.log)" > "${output_file}"
         return 1  # ✗ ÉCHEC
     fi
  

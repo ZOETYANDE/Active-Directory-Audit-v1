@@ -15,9 +15,9 @@ audit_shares() {
     # Share enumeration
     print_test "Énumération des partages"
     if [ "${HAS_NXC}" = true ] || [ "${HAS_CME}" = true ]; then
-        smb_tool_exec "${DC_IP}" -u "${username}" -p "${password}" -d "${DOMAIN}" --shares \
+        smb_tool_exec "${DC_IP}" -u "${username}" -p "@${pwd_file}" -d "${DOMAIN}" --shares \
             > "${output_dir}/shares.txt" 2>&1 || true
-        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/shares.txt" 2>/dev/null || true
+        redact_secret "${password}" "${output_dir}/shares.txt"
 
         local share_count
         share_count=$(grep -cE "READ|WRITE" "${output_dir}/shares.txt" 2>/dev/null || true)
@@ -50,9 +50,11 @@ audit_shares() {
     # SYSVOL content scan
     print_test "Analyse du contenu SYSVOL"
     if [ "${HAS_SMBCLIENT}" = true ]; then
-        smbclient "\\\\${DC_IP}\\SYSVOL" -U "${DOMAIN}/${username}%${password}" \
+        # PASSWD est lu par smbclient sans apparaître dans les arguments (ps aux),
+        # contrairement à -U "domain/user%password".
+        PASSWD="${password}" smbclient "\\\\${DC_IP}\\SYSVOL" -U "${DOMAIN}/${username}" \
             -c "recurse ON; ls" > "${output_dir}/sysvol_contents.txt" 2>&1 || true
-        sed -i "s/${password}/[REDACTED]/g" "${output_dir}/sysvol_contents.txt" 2>/dev/null || true
+        redact_secret "${password}" "${output_dir}/sysvol_contents.txt"
 
         # Search for script files with potential credentials
         if grep -qiE "\.bat|\.cmd|\.vbs|\.ps1|\.xml|\.ini" "${output_dir}/sysvol_contents.txt" 2>/dev/null; then
